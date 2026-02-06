@@ -280,10 +280,10 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     }
 
     tableRows.push([
-      { content: "01", styles: { halign: "center", valign: "middle" } },
-      { content: descContent, styles: { halign: "left", valign: "middle" } },
-      { content: "1", styles: { halign: "center", valign: "middle" } },
-      { content: `${currencySymbol} ${unitPrice.toLocaleString()}/-`, styles: { halign: "right", fontStyle: "bold", valign: "middle", fontSize: 11 } }
+      { content: "01", styles: { halign: "center", valign: "middle", fontSize: 9 } },
+      { content: descContent, styles: { halign: "left", valign: "middle", fontSize: 9 } },
+      { content: "1", styles: { halign: "center", valign: "middle", fontSize: 9 } },
+      { content: `${currencySymbol} ${unitPrice.toLocaleString()}/-`, styles: { halign: "right", fontStyle: "bold", valign: "middle", fontSize: 12 } }
     ])
 
     autoTable(doc, {
