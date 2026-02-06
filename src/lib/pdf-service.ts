@@ -117,20 +117,14 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     doc.text(`For ${item.name}`, pageWidth / 2, currentY, { align: "center" })
     currentY += 10
 
-    // "To" block only on first page as a table
+    // "To" block only on first page as a table (Quote Number only - no date, no validity)
     if (isFirstPage) {
       autoTable(doc, {
         startY: currentY,
-        head: [['To', 'Quote No', 'Date', 'Validity']],
+        head: [['To', 'Quote No']],
         body: [[
           `${quotation.customer_name}\n${quotation.customer_address || ''}`,
-          quotation.quotation_number,
-          new Date(quotation.created_at || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-'),
-          (() => {
-            const validityDate = new Date(quotation.created_at || Date.now())
-            validityDate.setDate(validityDate.getDate() + 30)
-            return validityDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
-          })()
+          quotation.quotation_number
         ]],
         theme: "grid",
         headStyles: {
@@ -140,19 +134,18 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
           lineWidth: 0.2,
           fontStyle: "bold",
           halign: "center",
-          fontSize: 8
+          fontSize: 9
         },
         bodyStyles: {
           textColor: [0, 0, 0],
           lineColor: [0, 0, 0],
           lineWidth: 0.2,
-          fontSize: 8
+          fontSize: 9,
+          cellPadding: 3
         },
         columnStyles: {
-          0: { cellWidth: 60, halign: "left" },
-          1: { cellWidth: 35, halign: "center" },
-          2: { cellWidth: 35, halign: "center" },
-          3: { cellWidth: 35, halign: "center" }
+          0: { cellWidth: 100, halign: "left" },
+          1: { cellWidth: 65, halign: "center" }
         },
         margin: { left: margin, right: margin }
       })
