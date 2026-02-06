@@ -16,7 +16,7 @@ export async function updateSettings(formData: FormData) {
   const signature_role = formData.get('signature_role') as string
   const logoFile = formData.get('logo') as File | null
 
-  let logo_url = formData.get('existing_logo_url') as string
+  let company_logo = formData.get('existing_logo_url') as string
 
   if (logoFile && logoFile.size > 0) {
     const fileExt = logoFile.name.split('.').pop()
@@ -33,7 +33,7 @@ export async function updateSettings(formData: FormData) {
       .from('logos')
       .getPublicUrl(filePath)
     
-    logo_url = publicUrl
+    company_logo = publicUrl
   }
 
   const { error } = await supabase
@@ -49,7 +49,7 @@ export async function updateSettings(formData: FormData) {
       terms_text,
       signature_name,
       signature_role,
-      logo_url,
+      company_logo,
       updated_at: new Date().toISOString()
     })
     .eq('id', 1)
