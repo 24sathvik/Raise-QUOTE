@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -10,7 +10,7 @@ import { Image as ImageIcon, Loader2, Save } from 'lucide-react'
 import { updateSettings } from './actions'
 import { toast } from 'sonner'
 
-export default function SettingsForm({ settings }: { settings: any }) {
+export default memo(function SettingsForm({ settings }: { settings: any }) {
   const [isLoading, setIsLoading] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(settings?.logo_url || null)
 
@@ -155,4 +155,4 @@ export default function SettingsForm({ settings }: { settings: any }) {
       </div>
     </form>
   )
-}
+})
