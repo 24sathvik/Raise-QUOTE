@@ -117,7 +117,7 @@ export default async function AdminDashboard() {
       </div>
 
       {/* Primary Stats Grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
           <Card key={stat.title} className="group relative overflow-hidden border-none bg-white shadow-sm ring-1 ring-gray-100 transition-all hover:shadow-xl hover:-translate-y-1 rounded-2xl">
             <div className={`absolute top-0 left-0 h-1 w-full bg-gradient-to-r ${stat.color}`} />
@@ -128,8 +128,8 @@ export default async function AdminDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-black tracking-tighter text-black">{stat.value}</div>
-              <div className="mt-2 flex items-center gap-2">
+              <div className="text-2xl font-black tracking-tighter text-black break-words">{stat.value}</div>
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
                 <span className={`flex items-center text-[10px] font-bold ${stat.trendUp ? 'text-emerald-500' : 'text-rose-500'}`}>
                   {stat.trendUp ? <ArrowUpRight className="mr-0.5 h-3 w-3" /> : <ArrowDownRight className="mr-0.5 h-3 w-3" />}
                   {stat.trend}
