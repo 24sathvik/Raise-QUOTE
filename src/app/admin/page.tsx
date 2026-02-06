@@ -156,13 +156,13 @@ export default async function AdminDashboard() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
                   <tr className="bg-gray-50/50">
-                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">ID</th>
-                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Client</th>
-                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Salesperson</th>
-                    <th className="px-8 py-4 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Amount</th>
+                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 whitespace-nowrap">ID</th>
+                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 whitespace-nowrap">Client</th>
+                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 whitespace-nowrap">Salesperson</th>
+                    <th className="px-8 py-4 text-right text-[10px] font-black uppercase tracking-widest text-gray-400 whitespace-nowrap">Amount</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
