@@ -120,6 +120,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   const [meta, setMeta] = useState({
     number: `QT-${Date.now().toString().slice(-6)}`,
     date: new Date().toISOString().split("T")[0],
+    validity_days: 30,
   })
   const [discount, setDiscount] = useState(0)
   const [isProductOpen, setIsProductOpen] = useState(false)
