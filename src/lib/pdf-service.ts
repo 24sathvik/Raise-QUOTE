@@ -24,9 +24,6 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
   const currencySymbol = currency === 'INR' ? '₹' : '$'
   const currencyLabel = currency === 'INR' ? 'INR' : 'USD'
 
-  // Calculate total pages
-  let totalPages = items.length + 1 // items + terms page
-
   const drawPageBorder = () => {
     // Outer Blue Border
     doc.setDrawColor(0, 82, 156)
@@ -46,13 +43,6 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     doc.setFontSize(7)
     doc.setTextColor(0)
     doc.text("Write us: info@raiselabequip.com / sales@raiselabequip.com | Contact: +91 91777 70365", pageWidth / 2, pageHeight - 14.5, { align: "center" })
-  }
-
-  const drawPageNumber = (pageNum: number) => {
-    doc.setFont("helvetica", "normal")
-    doc.setFontSize(8)
-    doc.setTextColor(0)
-    doc.text(`Page ${pageNum} of ${totalPages}`, pageWidth - margin, pageHeight - 8, { align: "right" })
   }
 
   const drawHeader = (logoBase64: string) => {
@@ -100,6 +90,16 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     })
   
   await Promise.all(imagePromises)
+
+  // Calculate total pages
+  const totalPages = items.length + 1
+
+  const drawPageNumber = (pageNum: number) => {
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(8)
+    doc.setTextColor(0)
+    doc.text(`Page ${pageNum} of ${totalPages}`, pageWidth - margin, pageHeight - 8, { align: "right" })
+  }
 
   // Start Drawing
   let pageNumber = 1
