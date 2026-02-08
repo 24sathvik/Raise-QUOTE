@@ -122,29 +122,36 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
     // "To" block - ONLY on first page, FIRST thing after header
     if (isFirstPage) {
+      // Calculate validity date
+      const validityDate = new Date(quotation.created_at || Date.now())
+      validityDate.setDate(validityDate.getDate() + (quotation.validity_days || 30))
+      
       autoTable(doc, {
         startY: currentY,
         body: [[
-          { content: `To\n\n${quotation.customer_name}${quotation.customer_address ? '\n' + quotation.customer_address : ''}`, styles: { fontStyle: "bold", fontSize: 10, valign: "top" } },
-          { content: `Quote No\n${quotation.quotation_number}\n\nDate\n${new Date(quotation.created_at || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')}\n\nValidity\n${(() => {
-            const validityDate = new Date(quotation.created_at || Date.now())
-            validityDate.setDate(validityDate.getDate() + 30)
-            return validityDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
-          })()}`, styles: { fontSize: 10, valign: "top" } }
+          { 
+            content: `To\n\n${quotation.customer_name}${quotation.customer_address ? '\n' + quotation.customer_address : ''}`, 
+            styles: { fontStyle: "bold", fontSize: 10, valign: "top", cellPadding: 5 } 
+          },
+          { 
+            content: `Quote No\n${quotation.quotation_number}\n\nDate\n${new Date(quotation.created_at || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')}\n\nValidity\n${validityDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')}`, 
+            styles: { fontSize: 10, valign: "top", cellPadding: 5 } 
+          }
         ]],
         theme: "grid",
         bodyStyles: {
           textColor: [0, 0, 0],
           lineColor: [0, 0, 0],
           lineWidth: 0.3,
-          cellPadding: 4,
+          minCellHeight: 35,
           valign: "top"
         },
         columnStyles: {
-          0: { cellWidth: 105, halign: "left" },
-          1: { cellWidth: 60, halign: "left" }
+          0: { cellWidth: pageWidth - (margin * 2) - 70, halign: "left" },
+          1: { cellWidth: 70, halign: "left" }
         },
-        margin: { left: margin, right: margin }
+        margin: { left: margin, right: margin },
+        tableWidth: pageWidth - (margin * 2)
       })
       currentY = (doc as any).lastAutoTable.finalY + 10
       isFirstPage = false
