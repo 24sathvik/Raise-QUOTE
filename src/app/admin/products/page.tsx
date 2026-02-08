@@ -60,6 +60,7 @@ interface Product {
   addons: Addon[]
   specs?: Spec[]
   created_at: string
+  image_format?: 'wide' | 'tall'
 }
 
 interface Category {
@@ -87,6 +88,7 @@ export default function ProductsPage() {
     sku: "",
     addons: [],
     specs: [],
+    image_format: "wide",
   })
 
   const supabase = createClient()
@@ -248,6 +250,7 @@ export default function ProductsPage() {
       sku: "",
       addons: [],
       specs: [],
+      image_format: "wide",
     })
   }
 
@@ -397,6 +400,21 @@ export default function ProductsPage() {
                       {uploading ? "Uploading..." : "Upload High-Quality Image"}
                       <input id="image-upload" type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
                     </Label>
+                    <div className="space-y-2">
+                      <Label>PDF Image Layout</Label>
+                      <Select 
+                        value={formData.image_format || 'wide'} 
+                        onValueChange={(v: 'wide' | 'tall') => setFormData({ ...formData, image_format: v })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Layout" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="wide">Format 1 - Wide (Image below description)</SelectItem>
+                          <SelectItem value="tall">Format 2 - Tall (Image beside features)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
 
                   <div className="space-y-4">
