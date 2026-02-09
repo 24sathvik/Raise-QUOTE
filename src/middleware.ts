@@ -16,5 +16,10 @@ export const config = {
      * - api routes that don't need auth (if any, though usually we want auth there too)
      */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // Alternatively, be more specific:
+    // '/admin/:path*',
+    // '/quotations/:path*',
+    // '/auth/:path*',
+    // '/'
   ],
 }

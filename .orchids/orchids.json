@@ -1,8 +1,0 @@
-{
-  "projectId": "70423284-b5ba-4316-99e4-442f4e827db6",
-  "createdAt": 1769084580057,
-  "version": "1.0",
-  "startupCommands": [
-    "npm install react@19.2.4 react-dom@19.2.4 --save --legacy-peer-deps; npm install --save-dev typescript --legacy-peer-deps; npm run dev"
-  ]
-}

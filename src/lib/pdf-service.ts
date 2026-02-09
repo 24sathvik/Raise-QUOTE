@@ -195,7 +195,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
     // Get features and image format option from item
     const imageFormat = item.image_format || 'wide' // 'wide' or 'tall'
-    const features = item.features || [
+    const features = item.features && item.features.length > 0 ? item.features : [
       "Accurate method for determining the strength of antibiotic material",
       "Microprocessor based design",
       "Average of Vertical diameter & Horizontal diameter of inhibited zone",
@@ -246,8 +246,9 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       doc.setFont("helvetica", "normal")
       doc.setFontSize(9)
 
-      // Calculate widths: Features get 60%, Image gets 40% approx
-      const featureWidth = (pageWidth - (margin * 2)) * 0.60
+      // Calculate widths: Features get 55%, Image gets 40% approx
+      const featureWidth = (pageWidth - (margin * 2)) * 0.55
+      const imgWidth = (pageWidth - (margin * 2)) * 0.40
 
       features.forEach((f: string) => {
         doc.text("•", margin + 3, currentY)
@@ -258,10 +259,9 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
       // Tall image on the right
       if (imageData?.base64) {
-        const imgX = margin + featureWidth + 10
-        const imgW = (pageWidth - (margin * 2)) * 0.35
-        const imgH = 60 // Fixed height for tall image
-        doc.addImage(imageData.base64, "PNG", imgX, featureStartY, imgW, imgH)
+        const imgX = margin + featureWidth + 5
+        const imgH = 75 // Increased height for side-by-side
+        doc.addImage(imageData.base64, "JPEG", imgX, featureStartY, imgWidth, imgH)
 
         // Ensure new Y is below the taller of the two (features or image)
         const imageEndY = featureStartY + imgH + 10
@@ -367,22 +367,15 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
   drawHeader(logoBase64)
   drawPageNumber(pageNumber)
 
-  currentY = 50
+  currentY = 55 // Start terms higher up now that HSN is gone
+
   doc.setFont("helvetica", "bold")
   doc.setFontSize(12)
   doc.text("Terms And Conditions:", margin, currentY)
   currentY += 10
 
-  doc.setFontSize(10)
-  doc.text("HSN CODE", margin, currentY)
-  currentY += 6
-  doc.setFont("helvetica", "normal")
-  doc.text("84799031", margin + 5, currentY)
-  currentY += 12
-
   // Default terms without numbering
   const defaultTerms = [
-    { title: "Taxes", text: "18% GST extra applicable" },
     { title: "Packaging & Forwarding", text: "Extra As Applicable" },
     { title: "Freight", text: "To Pay / Extra as applicable" },
     { title: "DELIVERY", text: "We deliver the order in 3-4 Weeks from the date of receipt of purchase order" },

@@ -65,6 +65,7 @@ interface Product {
   sku: string
   addons?: { name: string; price: number; active?: boolean }[]
   specs?: { key: string; value: string }[]
+  features?: string[]
   category?: string
   image_format?: 'wide' | 'tall'
 }
@@ -80,6 +81,7 @@ interface QuotationItem {
   sku: string
   selectedAddons?: { name: string; price: number }[]
   specs?: { key: string; value: string }[]
+  features?: string[]
   image_format?: 'wide' | 'tall'
 }
 
@@ -98,7 +100,6 @@ interface QuotationBuilderProps {
 type Currency = 'INR' | 'USD'
 
 const DEFAULT_TERMS = [
-  "Taxes: 18% GST extra applicable",
   "Packaging & Forwarding: Extra As Applicable",
   "Fright: To Pay / Extra as applicable",
   "DELIVERY: We deliver the order in 3-4 Weeks from the date of receipt of purchase order",
@@ -118,7 +119,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     address: "",
   })
   const [meta, setMeta] = useState({
-    number: `QT-${Date.now().toString().slice(-6)}`,
+    number: "RLE-...",
     date: new Date().toISOString().split("T")[0],
     validity_days: 30,
   })
@@ -131,7 +132,37 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   )
   const [currency, setCurrency] = useState<Currency>('INR')
 
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
+
+  // Fetch next sequential quotation number
+  useEffect(() => {
+    const fetchNextQuotationNumber = async () => {
+      try {
+        const { data: lastQuotation } = await supabase
+          .from('quotations')
+          .select('quotation_number')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+
+        let nextNumber = 'RLE-101'
+        if (lastQuotation?.quotation_number) {
+          const match = lastQuotation.quotation_number.match(/RLE-(\d+)/)
+          if (match) {
+            const num = parseInt(match[1]) + 1
+            nextNumber = `RLE-${num}`
+          }
+        }
+
+        setMeta(prev => ({ ...prev, number: nextNumber }))
+      } catch (error) {
+        console.error('Failed to fetch quotation number:', error)
+        setMeta(prev => ({ ...prev, number: 'RLE-101' }))
+      }
+    }
+
+    fetchNextQuotationNumber()
+  }, [supabase])
 
   // Load draft
   useEffect(() => {
@@ -141,9 +172,11 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         const parsed = JSON.parse(draft)
         setItems(parsed.items || [])
         setCustomer(parsed.customer || { name: "", phone: "", email: "", address: "" })
-        setMeta(parsed.meta || { number: `QT-${Date.now().toString().slice(-6)}`, date: new Date().toISOString().split("T")[0] })
+        // Don't load quotation number from draft - always use fresh sequential number
+        if (parsed.meta?.date) {
+          setMeta(prev => ({ ...prev, date: parsed.meta.date, validity_days: parsed.meta.validity_days || 30 }))
+        }
         setDiscount(parsed.discount || 0)
-        // Check if parsing sets old numbers, if so, re-initialize defaults or just use what's saved
         if (parsed.terms) {
           setTerms(parsed.terms)
         }
@@ -153,12 +186,16 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     }
   }, [])
 
-  // Save draft
+  // Save draft with debounce
   useEffect(() => {
-    localStorage.setItem(
-      "quotation_draft",
-      JSON.stringify({ items, customer, meta, discount, terms })
-    )
+    const timeoutId = setTimeout(() => {
+      localStorage.setItem(
+        "quotation_draft",
+        JSON.stringify({ items, customer, meta, discount, terms })
+      )
+    }, 1000) // Debounce for 1 second
+
+    return () => clearTimeout(timeoutId)
   }, [items, customer, meta, discount, terms])
 
   const totals = useMemo(() => {
@@ -167,12 +204,12 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       return acc + (item.price + addonsPrice) * item.qty
     }, 0)
 
-    const tax_rate = settings?.tax_rate || 0
-    const tax_amount = (subtotal - discount) * (tax_rate / 100)
-    const grand_total = Math.max(0, subtotal - discount + tax_amount)
+    // Tax completely removed as per request
+    const tax_amount = 0
+    const grand_total = Math.max(0, subtotal - discount)
 
     return { subtotal, tax_amount, grand_total }
-  }, [items, discount, settings?.tax_rate])
+  }, [items, discount])
 
   const addItem = useCallback((product: Product) => {
     const newItem: QuotationItem = {
@@ -187,6 +224,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       // Add all addons by default as requested
       selectedAddons: product.addons ? product.addons.map(a => ({ name: a.name, price: a.price })) : [],
       specs: product.specs || [],
+      features: product.features || [],
       image_format: product.image_format || 'wide'
     }
     setItems(prev => [...prev, newItem])
@@ -224,11 +262,30 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     if (!confirm("Are you sure you want to clear this quotation?")) return
     setItems([])
     setCustomer({ name: "", phone: "", email: "", address: "" })
-    setMeta({
-      number: `QT-${Date.now().toString().slice(-6)}`,
-      date: new Date().toISOString().split("T")[0],
-      validity_days: 30,
-    })
+    // Fetch fresh sequential number instead of random one
+    const triggerRefetch = async () => {
+      const { data: lastQuotation } = await supabase
+        .from('quotations')
+        .select('quotation_number')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      let nextNumber = 'RLE-101'
+      if (lastQuotation?.quotation_number) {
+        const match = lastQuotation.quotation_number.match(/RLE-(\d+)/)
+        if (match) {
+          const num = parseInt(match[1]) + 1
+          nextNumber = `RLE-${num}`
+        }
+      }
+      setMeta({
+        number: nextNumber,
+        date: new Date().toISOString().split("T")[0],
+        validity_days: 30,
+      })
+    }
+    triggerRefetch()
     setDiscount(0)
     setTerms(DEFAULT_TERMS.map((t, i) => ({ id: `term-${i}`, text: t, selected: true })))
     localStorage.removeItem("quotation_draft")
@@ -252,24 +309,18 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         return
       }
 
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        toast.error("Your session has expired. Please log in again.")
-        window.location.href = "/auth/login"
-        return
-      }
-
+      // We already have user in props, no need to call getSession which might abort
       const { data, error } = await supabase.from("quotations").insert({
         quotation_number: meta.number,
-        created_by: session.user.id,
+        created_by: user.id,
         customer_name: customer.name,
         customer_phone: customer.phone,
         customer_email: customer.email,
         customer_address: customer.address,
         items_json: items,
         subtotal: totals.subtotal,
-        tax_amount: totals.tax_amount,
-        tax_total: totals.tax_amount,
+        tax_amount: 0,
+        tax_total: 0,
         total_amount: totals.grand_total,
         discount_total: discount,
         grand_total: totals.grand_total,
@@ -277,23 +328,9 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
 
       if (error) throw error
 
-      // PREPARE DATA FOR PDF - including currency conversion
-      const EXCHANGE_RATE = 86; // Approx. INR to USD. Ideally fetched, but fixed for now.
-
-      const pdfItems = currency === 'USD'
-        ? items.map(item => ({
-          ...item,
-          price: Number((item.price / EXCHANGE_RATE).toFixed(2)),
-          selectedAddons: item.selectedAddons?.map(addon => ({
-            ...addon,
-            price: Number((addon.price / EXCHANGE_RATE).toFixed(2))
-          }))
-        }))
-        : items;
-
       const pdfBlob = await generateQuotationPDF({
         quotation: data,
-        items: pdfItems, // Pass converted items
+        items: items, // Use items directly as they are already converted in UI
         settings,
         user,
         selectedTerms: terms.filter(t => t.selected).map(t => ({ title: t.text.split(':')[0], text: t.text.split(':').slice(1).join(':').trim() })),
@@ -529,7 +566,21 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setCurrency('INR')}
+                        onClick={() => {
+                          if (currency !== 'INR') {
+                            const conversionRate = 83
+                            setItems(items.map(item => ({
+                              ...item,
+                              price: Math.round(item.price * conversionRate),
+                              selectedAddons: item.selectedAddons?.map(addon => ({
+                                ...addon,
+                                price: Math.round(addon.price * conversionRate)
+                              }))
+                            })))
+                            setDiscount(prev => Math.round(prev * conversionRate))
+                            setCurrency('INR')
+                          }
+                        }}
                         className={`flex-1 h-11 rounded-xl font-bold transition-all ${currency === 'INR'
                           ? 'bg-black text-white'
                           : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
@@ -539,7 +590,21 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                       </button>
                       <button
                         type="button"
-                        onClick={() => setCurrency('USD')}
+                        onClick={() => {
+                          if (currency !== 'USD') {
+                            const conversionRate = 83
+                            setItems(items.map(item => ({
+                              ...item,
+                              price: Number((item.price / conversionRate).toFixed(2)),
+                              selectedAddons: item.selectedAddons?.map(addon => ({
+                                ...addon,
+                                price: Number((addon.price / conversionRate).toFixed(2))
+                              }))
+                            })))
+                            setDiscount(prev => Number((prev / conversionRate).toFixed(2)))
+                            setCurrency('USD')
+                          }
+                        }}
                         className={`flex-1 h-11 rounded-xl font-bold transition-all ${currency === 'USD'
                           ? 'bg-black text-white'
                           : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
@@ -795,10 +860,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                           onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
                         />
                       </div>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
-                      <span>Tax ({settings?.tax_rate || 18}%)</span>
-                      <span className="text-black">{currency === 'INR' ? '₹' : '$'}{totals.tax_amount.toLocaleString()}</span>
                     </div>
                     <div className="h-px bg-gray-100" />
                     <div className="flex items-end justify-between">

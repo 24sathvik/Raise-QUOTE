@@ -16,7 +16,7 @@ export default async function SalesPage() {
   const [productsResponse, settingsResponse, profileResponse] = await Promise.all([
     supabase
       .from('products')
-      .select('id, name, description, price, image_url, sku, specs, category, addons')
+      .select('id, name, description, price, image_url, sku, specs, features, category, addons, image_format')
       .eq('active', true)
       .order('name'),
     supabase
@@ -38,8 +38,8 @@ export default async function SalesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50/50">
-      <QuotationBuilder 
-        initialProducts={productsResponse.data || []} 
+      <QuotationBuilder
+        initialProducts={productsResponse.data || []}
         settings={settingsResponse.data}
         user={profileResponse.data}
       />

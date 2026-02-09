@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import { ArrowRight, Loader2, Lock, Mail } from "lucide-react"
@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   useEffect(() => {
@@ -33,7 +34,8 @@ export default function LoginPage() {
       if (error) throw error
 
       toast.success("Signed in successfully")
-      router.push("/")
+      const next = searchParams.get('next')
+      router.push(next || "/")
       router.refresh()
     } catch (err: any) {
       toast.error(err.message)

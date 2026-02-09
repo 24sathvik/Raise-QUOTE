@@ -59,6 +59,7 @@ interface Product {
   sku: string
   addons: Addon[]
   specs?: Spec[]
+  features?: string[]
   created_at: string
   image_format?: 'wide' | 'tall'
 }
@@ -76,7 +77,7 @@ export default function ProductsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [uploading, setUploading] = useState(false)
-  
+
   const [formData, setFormData] = useState<Partial<Product>>({
     name: "",
     description: "",
@@ -88,6 +89,7 @@ export default function ProductsPage() {
     sku: "",
     addons: [],
     specs: [],
+    features: [],
     image_format: "wide",
   })
 
@@ -105,10 +107,10 @@ export default function ProductsPage() {
         supabase.from("products").select("*").order("created_at", { ascending: false }),
         supabase.from("categories").select("id, name").order("name")
       ])
-      
+
       if (prodRes.error) toast.error(prodRes.error.message)
       else setProducts(prodRes.data || [])
-      
+
       if (catRes.error) toast.error(catRes.error.message)
       else setCategories(catRes.data || [])
     } catch (err: any) {
@@ -237,6 +239,25 @@ export default function ProductsPage() {
     setFormData({ ...formData, specs: next })
   }
 
+  const addFeature = () => {
+    setFormData({
+      ...formData,
+      features: [...(formData.features || []), ""]
+    })
+  }
+
+  const removeFeature = (index: number) => {
+    const next = [...(formData.features || [])]
+    next.splice(index, 1)
+    setFormData({ ...formData, features: next })
+  }
+
+  const updateFeature = (index: number, value: string) => {
+    const next = [...(formData.features || [])]
+    next[index] = value
+    setFormData({ ...formData, features: next })
+  }
+
   const resetForm = () => {
     setSelectedProduct(null)
     setFormData({
@@ -250,6 +271,7 @@ export default function ProductsPage() {
       sku: "",
       addons: [],
       specs: [],
+      features: [],
       image_format: "wide",
     })
   }
@@ -282,7 +304,7 @@ export default function ProductsPage() {
                 <DialogTitle>{selectedProduct ? "Edit Product" : "Add New Product"}</DialogTitle>
                 <DialogDescription>Fill in the product details below.</DialogDescription>
               </DialogHeader>
-              
+
               <div className="grid gap-6 md:gap-8 py-4 md:grid-cols-2">
                 <div className="space-y-6">
                   <div className="space-y-4">
@@ -298,8 +320,8 @@ export default function ProductsPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Category</Label>
-                        <Select 
-                          value={formData.category} 
+                        <Select
+                          value={formData.category}
                           onValueChange={(v) => setFormData({ ...formData, category: v })}
                         >
                           <SelectTrigger>
@@ -360,15 +382,15 @@ export default function ProductsPage() {
                     <div className="space-y-2">
                       {formData.addons?.map((addon, i) => (
                         <div key={i} className="flex gap-2 items-start">
-                          <Input 
-                            placeholder="Name" 
+                          <Input
+                            placeholder="Name"
                             className="flex-1"
                             value={addon.name}
                             onChange={(e) => updateAddon(i, { name: e.target.value })}
                           />
-                          <Input 
-                            type="number" 
-                            placeholder="Price" 
+                          <Input
+                            type="number"
+                            placeholder="Price"
                             className="w-24"
                             value={addon.price}
                             onChange={(e) => updateAddon(i, { price: parseFloat(e.target.value) || 0 })}
@@ -402,8 +424,8 @@ export default function ProductsPage() {
                     </Label>
                     <div className="space-y-2">
                       <Label>PDF Image Layout</Label>
-                      <Select 
-                        value={formData.image_format || 'wide'} 
+                      <Select
+                        value={formData.image_format || 'wide'}
                         onValueChange={(v: 'wide' | 'tall') => setFormData({ ...formData, image_format: v })}
                       >
                         <SelectTrigger>
@@ -427,19 +449,43 @@ export default function ProductsPage() {
                     <div className="space-y-2">
                       {formData.specs?.map((spec, i) => (
                         <div key={i} className="flex gap-2 items-start">
-                          <Input 
-                            placeholder="Label (e.g. Material)" 
+                          <Input
+                            placeholder="Label (e.g. Material)"
                             className="flex-1"
                             value={spec.key}
                             onChange={(e) => updateSpec(i, { key: e.target.value })}
                           />
-                          <Input 
-                            placeholder="Value" 
+                          <Input
+                            placeholder="Value"
                             className="flex-1"
                             value={spec.value}
                             onChange={(e) => updateSpec(i, { value: e.target.value })}
                           />
                           <button type="button" onClick={() => removeSpec(i)} className="p-2 text-red-500 hover:bg-red-50 rounded-md">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400">Product Features</h3>
+                      <button type="button" onClick={addFeature} className="text-xs font-bold text-black hover:underline flex items-center gap-1">
+                        <Plus className="h-3 w-3" /> Add
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {formData.features?.map((feature, i) => (
+                        <div key={i} className="flex gap-2 items-start">
+                          <Input
+                            placeholder="Feature description (e.g., Microprocessor based design)"
+                            className="flex-1"
+                            value={feature}
+                            onChange={(e) => updateFeature(i, e.target.value)}
+                          />
+                          <button type="button" onClick={() => removeFeature(i)} className="p-2 text-red-500 hover:bg-red-50 rounded-md">
                             <X className="h-4 w-4" />
                           </button>
                         </div>
@@ -487,73 +533,73 @@ export default function ProductsPage() {
                 <TableHead className="text-right px-6 whitespace-nowrap">Actions</TableHead>
               </TableRow>
             </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={6} className="h-48 text-center font-medium text-gray-400">Fetching products...</TableCell></TableRow>
-            ) : filteredProducts.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="h-48 text-center font-medium text-gray-400">No products found.</TableCell></TableRow>
-            ) : (
-              filteredProducts.map((p) => (
-                <TableRow key={p.id} className="group hover:bg-gray-50/30 transition-colors">
-                  <TableCell className="px-6 py-4">
-                    <div className="relative h-14 w-14 overflow-hidden rounded-xl border bg-white p-1">
-                      {p.image_url ? (
-                        <Image src={p.image_url} alt={p.name} fill className="object-contain" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-gray-300">N/A</div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-0.5">
-                      <div className="font-black text-black uppercase tracking-tight">{p.name}</div>
-                      <div className="max-w-[240px] truncate text-xs text-gray-400">{p.description}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-none font-bold uppercase text-[10px]">{p.category || "Uncategorized"}</Badge>
-                  </TableCell>
-                  <TableCell className="font-black text-black">₹{p.price.toLocaleString()}</TableCell>
-                  <TableCell>
-                    <Badge variant={p.active ? "default" : "destructive"} className={p.active ? "bg-black text-white" : ""}>
-                      {p.active ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right px-6">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedProduct(p)
-                          setFormData({
-                            ...p,
-                            addons: p.addons || [],
-                            specs: p.specs || [],
-                          })
-                          setIsDialogOpen(true)
-                        }}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleToggleStatus(p)}
-                        className={`p-2 rounded-lg transition-colors ${p.active ? "text-red-500 hover:bg-red-50" : "text-green-500 hover:bg-green-50"}`}
-                      >
-                        {p.active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(p.id)}
-                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={6} className="h-48 text-center font-medium text-gray-400">Fetching products...</TableCell></TableRow>
+              ) : filteredProducts.length === 0 ? (
+                <TableRow><TableCell colSpan={6} className="h-48 text-center font-medium text-gray-400">No products found.</TableCell></TableRow>
+              ) : (
+                filteredProducts.map((p) => (
+                  <TableRow key={p.id} className="group hover:bg-gray-50/30 transition-colors">
+                    <TableCell className="px-6 py-4">
+                      <div className="relative h-14 w-14 overflow-hidden rounded-xl border bg-white p-1">
+                        {p.image_url ? (
+                          <Image src={p.image_url} alt={p.name} fill className="object-contain" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-gray-300">N/A</div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-0.5">
+                        <div className="font-black text-black uppercase tracking-tight">{p.name}</div>
+                        <div className="max-w-[240px] truncate text-xs text-gray-400">{p.description}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-none font-bold uppercase text-[10px]">{p.category || "Uncategorized"}</Badge>
+                    </TableCell>
+                    <TableCell className="font-black text-black">₹{p.price.toLocaleString()}</TableCell>
+                    <TableCell>
+                      <Badge variant={p.active ? "default" : "destructive"} className={p.active ? "bg-black text-white" : ""}>
+                        {p.active ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right px-6">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedProduct(p)
+                            setFormData({
+                              ...p,
+                              addons: p.addons || [],
+                              specs: p.specs || [],
+                            })
+                            setIsDialogOpen(true)
+                          }}
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleToggleStatus(p)}
+                          className={`p-2 rounded-lg transition-colors ${p.active ? "text-red-500 hover:bg-red-50" : "text-green-500 hover:bg-green-50"}`}
+                        >
+                          {p.active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+                        </button>
+                        <button
+                          onClick={() => handleDelete(p.id)}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
       </div>
     </div>
