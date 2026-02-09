@@ -162,13 +162,22 @@ export default function UsersPage() {
     try {
       const res = await fetch(`/api/admin/users?id=${id}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
       })
+      
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || `HTTP ${res.status}`)
+      }
+      
       const data = await res.json()
       if (data.error) throw new Error(data.error)
+      
       toast.success("User deleted successfully")
       fetchUsers()
     } catch (err: any) {
-      toast.error(err.message)
+      console.error("Delete user error:", err)
+      toast.error(err.message || "Failed to delete user")
     }
   }
 
