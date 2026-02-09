@@ -109,6 +109,7 @@ export default function UsersPage() {
     try {
       const res = await fetch("/api/admin/users", {
         method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           id: selectedUser.id, 
           name: formData.name, 
@@ -116,13 +117,21 @@ export default function UsersPage() {
           phone: formData.phone
         }),
       })
+      
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || `HTTP ${res.status}`)
+      }
+      
       const data = await res.json()
       if (data.error) throw new Error(data.error)
+      
       toast.success("User updated successfully")
       setIsEditOpen(false)
       fetchUsers()
     } catch (err: any) {
-      toast.error(err.message)
+      console.error("Update user error:", err)
+      toast.error(err.message || "Failed to update user")
     }
   }
 
@@ -130,8 +139,15 @@ export default function UsersPage() {
     try {
       const res = await fetch("/api/admin/users", {
         method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: user.id, active: !user.active }),
       })
+      
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || `HTTP ${res.status}`)
+      }
+      
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       toast.success(`User ${user.active ? "deactivated" : "activated"} successfully`)
