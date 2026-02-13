@@ -18,7 +18,12 @@ export async function GET(request: Request) {
       // Use a FRESH stateless client to verify token, bypassing any cookie issues
       const supabasePure = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          auth: {
+            persistSession: false
+          }
+        }
       )
       const { data: { user: authUser } } = await supabasePure.auth.getUser(token)
       user = authUser
@@ -208,6 +213,18 @@ export async function PATCH(request: Request) {
         .eq('id', id)
 
       if (profileError) return NextResponse.json({ error: profileError.message }, { status: 400 })
+
+      // Sync role to user_metadata
+      if (role || name || phone) {
+        const metadataUpdates: any = {}
+        if (role) metadataUpdates.role = role
+        if (name) metadataUpdates.full_name = name
+        if (phone) metadataUpdates.phone = phone
+
+        await supabaseAdmin.auth.admin.updateUserById(id, {
+          user_metadata: metadataUpdates
+        })
+      }
     }
 
     return NextResponse.json({ success: true })
