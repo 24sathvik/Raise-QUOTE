@@ -43,6 +43,25 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
   const fetchQuotations = async () => {
     setLoading(true)
     try {
+      // Get session user
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+
+      if (!authUser) {
+        console.log('No active session found')
+        setLoading(false)
+        return
+      }
+
+      // Fetch user role from profiles table
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', authUser.id)
+        .single()
+
+      const userRole = profile?.role
+      console.log('Current User Role:', userRole)
+
       let query = supabase
         .from("quotations")
         .select(`
@@ -57,15 +76,20 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
 
       // Restrict sales users to see only their own quotations
       // Admin sees all quotations
-      if (user?.role !== 'admin' && userId) {
-        query = query.eq('created_by', userId)
+      if (userRole !== 'admin') {
+        console.log('Restricting to user quotations only:', authUser.id)
+        query = query.eq('created_by', authUser.id)
+      } else {
+        console.log('Admin access granted: Fetching all quotations')
       }
 
       const { data, error } = await query.order("created_at", { ascending: false })
 
       if (error) throw error
+      console.log(`Fetched ${data?.length || 0} quotations`)
       setQuotations(data as any)
     } catch (error: any) {
+      console.error('Fetch error:', error)
       toast.error(error.message)
     } finally {
       setLoading(false)
