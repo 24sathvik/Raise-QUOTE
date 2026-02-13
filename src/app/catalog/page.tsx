@@ -12,9 +12,7 @@ export default async function CatalogPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) {
-    redirect('/auth/login')
-  }
+
 
   // Fetch products - use empty array if query fails to prevent page errors
   let products: any[] = []
