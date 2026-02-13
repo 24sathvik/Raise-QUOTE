@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ArrowLeft, Search, Calendar, User, Download, RefreshCw } from "lucide-react"
+import { ArrowLeft, Search, Download, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -28,39 +28,57 @@ interface Quotation {
   }
 }
 
-export default function QuotationsList({ user, userId }: { user: any, userId?: string }) {
+export default function QuotationsList() {
+  const supabase = createClient()
+
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [search, setSearch] = useState("")
-
-  const supabase = createClient()
+  const [role, setRole] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchQuotations()
-  }, [userId])
+    initialize()
+  }, [])
 
-  const fetchQuotations = async () => {
-    setLoading(true)
+  const initialize = async () => {
     try {
-      // Get session user
-      const { data: { user: authUser } } = await supabase.auth.getUser()
+      setLoading(true)
 
-      if (!authUser) {
-        console.log('No active session found')
-        setLoading(false)
+      // 1️⃣ Get authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+      if (authError || !user) {
+        toast.error("Authentication failed")
         return
       }
 
-      // Check if user is admin using RPC to bypass RLS
-      const { data: isAdmin, error: adminError } = await supabase.rpc('is_admin')
+      // 2️⃣ Fetch role from profiles table
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single()
 
-      if (adminError) {
-        console.error('Error checking admin status:', adminError)
+      if (profileError || !profile) {
+        toast.error("Unable to verify user role")
+        return
       }
 
-      console.log('Is Admin (RPC):', isAdmin)
+      setRole(profile.role)
 
+      // 3️⃣ Fetch quotations based on role
+      await fetchQuotations(user.id, profile.role)
+
+    } catch (err: any) {
+      toast.error(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchQuotations = async (userId: string, userRole: string) => {
+    try {
       let query = supabase
         .from("quotations")
         .select(`
@@ -70,35 +88,30 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
           grand_total,
           created_at,
           pdf_url,
-          profiles:created_by (full_name)
+          profiles!created_by (full_name)
         `)
+        .order("created_at", { ascending: false })
 
-      // Restrict sales users to see only their own quotations
-      // Admin sees all quotations
-      if (!isAdmin) {
-        console.log('Restricting to user quotations only:', authUser.id)
-        query = query.eq('created_by', authUser.id)
-      } else {
-        console.log('Admin access granted: Fetching all quotations')
+      // 🔐 Restrict sales users
+      if (userRole !== "admin") {
+        query = query.eq("created_by", userId)
       }
 
-      const { data, error } = await query.order("created_at", { ascending: false })
+      const { data, error } = await query
 
       if (error) throw error
-      console.log(`Fetched ${data?.length || 0} quotations`)
+
       setQuotations(data as any)
-    } catch (error: any) {
-      console.error('Fetch error:', error)
-      toast.error(error.message)
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
+
+    } catch (err: any) {
+      toast.error(err.message)
     }
   }
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true)
-    fetchQuotations()
+    await initialize()
+    setRefreshing(false)
   }
 
   const filteredQuotations = quotations.filter(
@@ -113,20 +126,23 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
-            href={user?.role === 'admin' ? "/admin/quotations" : "/"}
+            href={role === "admin" ? "/admin/quotations" : "/"}
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-100 bg-white text-gray-400 hover:text-black hover:shadow-sm transition-all"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
             <h1 className="text-3xl font-black tracking-tight text-black">
-              {user?.role === 'admin' ? 'All Quotations' : 'My Quotations'}
+              {role === "admin" ? "All Quotations" : "My Quotations"}
             </h1>
             <p className="text-sm font-medium text-gray-400">
-              {user?.role === 'admin' ? 'Monitor all team quotations.' : 'Track your generated quotations.'}
+              {role === "admin"
+                ? "Monitor all team quotations."
+                : "Track your generated quotations."}
             </p>
           </div>
         </div>
+
         <Button
           variant="outline"
           size="sm"
@@ -134,7 +150,7 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
           disabled={refreshing || loading}
           className="rounded-xl gap-2 font-bold"
         >
-          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
@@ -149,78 +165,56 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
         />
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border-none bg-white shadow-sm ring-1 ring-gray-100">
+      <div className="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-gray-100">
         <div className="min-w-[800px]">
           <Table>
             <TableHeader>
-              <TableRow className="border-gray-50 hover:bg-transparent">
-                <TableHead className="h-14 px-8 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Number</TableHead>
-                <TableHead className="h-14 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Customer</TableHead>
-                {user?.role === 'admin' && <TableHead className="h-14 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Salesperson</TableHead>}
-                <TableHead className="h-14 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Amount</TableHead>
-                <TableHead className="h-14 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Date</TableHead>
-                <TableHead className="h-14 px-8 text-right text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Actions</TableHead>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Number</TableHead>
+                <TableHead>Customer</TableHead>
+                {role === "admin" && <TableHead>Salesperson</TableHead>}
+                <TableHead>Amount</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
+
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={user?.role === 'admin' ? 6 : 5} className="h-32 text-center text-sm font-medium text-gray-400">
-                    Fetching quotation history...
+                  <TableCell colSpan={role === "admin" ? 6 : 5}>
+                    Loading...
                   </TableCell>
                 </TableRow>
               ) : filteredQuotations.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={user?.role === 'admin' ? 6 : 5} className="h-32 text-center text-sm font-medium text-gray-400">
+                  <TableCell colSpan={role === "admin" ? 6 : 5}>
                     No quotations found.
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredQuotations.map((q) => (
-                  <TableRow key={q.id} className="border-gray-50 group hover:bg-gray-50/50 transition-colors">
-                    <TableCell className="px-8 py-5 font-mono text-xs font-bold text-black">{q.quotation_number}</TableCell>
-                    <TableCell className="font-bold text-black">{q.customer_name}</TableCell>
-                    {user?.role === 'admin' && (
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-[8px] font-black text-black">
-                            {q.profiles?.full_name?.[0] || 'S'}
-                          </div>
-                          <span className="text-xs font-bold text-gray-600">{q.profiles?.full_name}</span>
-                        </div>
-                      </TableCell>
+                  <TableRow key={q.id}>
+                    <TableCell>{q.quotation_number}</TableCell>
+                    <TableCell>{q.customer_name}</TableCell>
+
+                    {role === "admin" && (
+                      <TableCell>{q.profiles?.full_name}</TableCell>
                     )}
-                    <TableCell className="font-black text-black">₹{q.grand_total?.toLocaleString()}</TableCell>
-                    <TableCell className="text-xs font-bold text-gray-400 uppercase tracking-tighter">
+
+                    <TableCell>₹{q.grand_total?.toLocaleString()}</TableCell>
+                    <TableCell>
                       {new Date(q.created_at).toLocaleDateString()}
                     </TableCell>
-                    <TableCell className="px-8 text-right">
+                    <TableCell className="text-right">
                       {q.pdf_url && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-9 gap-2 rounded-xl border-gray-100 font-bold hover:bg-gray-50"
-                          onClick={async () => {
-                            try {
-                              const path = q.pdf_url?.split('/').pop() // Extract filename
-                              if (!path) return
-
-                              const { data, error } = await supabase.storage
-                                .from('quotations-pdfs')
-                                .createSignedUrl(path, 60)
-
-                              if (error) throw error
-                              if (data?.signedUrl) {
-                                window.open(data.signedUrl, '_blank')
-                              }
-                            } catch (err: any) {
-                              toast.error("Failed to download PDF: " + err.message)
-                            }
-                          }}
+                        <a
+                          href={q.pdf_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
                         >
-                          <Download className="h-3.5 w-3.5" />
-                          View PDF
-                        </Button>
+                          <Download className="h-4 w-4 inline" />
+                        </a>
                       )}
                     </TableCell>
                   </TableRow>
