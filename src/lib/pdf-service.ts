@@ -129,14 +129,10 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
     // "To" block - ONLY on first page, FIRST thing after header
     if (isFirstPage) {
-      // Calculate validity date
-      let validityDate: Date
-      if (quotation.validity_date) {
-        validityDate = new Date(quotation.validity_date)
-      } else {
-        validityDate = new Date(quotation.created_at || Date.now())
-        validityDate.setDate(validityDate.getDate() + (quotation.validity_days || 30))
-      }
+      // Use database validity field as requested
+      const validityDate = quotation.validity_date
+        ? new Date(quotation.validity_date)
+        : new Date(quotation.created_at || Date.now()); // Fallback only if null, but DB should have it now
 
       const toAddress = `To\n\n${quotation.customer_name}${quotation.customer_address ? '\n' + quotation.customer_address : ''}`;
 

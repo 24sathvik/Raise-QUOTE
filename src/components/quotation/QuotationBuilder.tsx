@@ -324,6 +324,8 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         total_amount: totals.grand_total,
         discount_total: discount,
         grand_total: totals.grand_total,
+        validity_days: meta.validity_days,
+        validity_date: new Date(new Date(meta.date).setDate(new Date(meta.date).getDate() + (meta.validity_days || 30))).toISOString(),
       }).select().single()
 
       if (error) throw error
