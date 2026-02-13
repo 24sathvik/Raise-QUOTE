@@ -53,11 +53,15 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
       }
 
       // Fetch user role from profiles table
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', authUser.id)
         .single()
+
+      if (profileError) {
+        console.error('Error fetching profile role:', profileError)
+      }
 
       const userRole = profile?.role
       console.log('Current User Role:', userRole)
@@ -71,7 +75,7 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
           grand_total,
           created_at,
           pdf_url,
-          profiles!created_by (full_name)
+          profiles:created_by (full_name)
         `)
 
       // Restrict sales users to see only their own quotations
