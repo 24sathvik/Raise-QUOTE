@@ -399,38 +399,35 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
           </div>
 
           <nav className="flex-1 space-y-1 px-4 py-6">
-            <Link
-              href="/"
-              className="flex items-center gap-3 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-lg transition-all"
-            >
-              <Plus className="h-5 w-5" />
-              New Quotation
-            </Link>
-            <Link
-              href={user?.role === 'admin' ? "/admin/quotations" : "/quotations"}
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
-            >
-              <Hash className="h-5 w-5" />
-              Quotations
-            </Link>
-            <div className="my-6 h-px bg-gray-50" />
-            <Link
-              href={user?.role === 'admin' ? "/admin/products" : "/catalog"}
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
-            >
-              <Package className="h-5 w-5" />
-              Catalog
-            </Link>
-            {user?.role === 'admin' && (
-              <Link
-                href="/admin/users"
-                className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
-              >
-                <User className="h-5 w-5" />
-                Team
-              </Link>
-            )}
-          </nav>
+  <Link
+    href="/"
+    className="flex items-center gap-3 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-lg transition-all"
+  >
+    <Plus className="h-5 w-5" />
+    New Quotation
+  </Link>
+
+  <div className="my-6 h-px bg-gray-50" />
+
+  <Link
+    href={user?.role === 'admin' ? "/admin/products" : "/catalog"}
+    className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
+  >
+    <Package className="h-5 w-5" />
+    Catalog
+  </Link>
+
+  {user?.role === 'admin' && (
+    <Link
+      href="/admin/users"
+      className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
+    >
+      <User className="h-5 w-5" />
+      Team
+    </Link>
+  )}
+</nav>
+
 
           <div className="border-t border-gray-50 p-4">
             <div className="flex items-center gap-3 px-2 py-3 rounded-xl bg-gray-50/50">
