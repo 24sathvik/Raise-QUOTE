@@ -36,13 +36,10 @@ export default function QuotationsList() {
   const [search, setSearch] = useState("")
 
   useEffect(() => {
-    let mounted = true
-
     const initAuth = async () => {
-      const { data } = await supabase.auth.getUser()
-      if (!mounted) return
+      const { data } = await supabase.auth.getSession()
+      const currentUser = data.session?.user ?? null
 
-      const currentUser = data.user
       setUser(currentUser)
 
       if (currentUser) {
@@ -54,10 +51,8 @@ export default function QuotationsList() {
 
     initAuth()
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
+    const { data: listener } = supabase.auth.onAuthStateChange(
       async (_, session) => {
-        if (!mounted) return
-
         const currentUser = session?.user ?? null
         setUser(currentUser)
 
@@ -71,8 +66,7 @@ export default function QuotationsList() {
     )
 
     return () => {
-      mounted = false
-      authListener.subscription.unsubscribe()
+      listener.subscription.unsubscribe()
     }
   }, [])
 
@@ -90,14 +84,14 @@ export default function QuotationsList() {
           created_at,
           pdf_url
         `)
-        .eq("created_by", currentUser.id) // ✅ STRICT USER FILTER
+        .eq("created_by", currentUser.id) // STRICT USER FILTER
         .order("created_at", { ascending: false })
 
       if (error) throw error
 
       setQuotations(data || [])
     } catch (error: any) {
-      console.error("Fetch error:", error)
+      console.error(error)
       toast.error(error.message || "Failed to fetch quotations")
     } finally {
       setLoading(false)
@@ -110,6 +104,7 @@ export default function QuotationsList() {
       toast.error("Please log in first")
       return
     }
+
     setRefreshing(true)
     await fetchQuotations(user)
   }
