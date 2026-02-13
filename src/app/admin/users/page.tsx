@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState } from "react"
-import { Search } from "lucide-react"
+import { Plus, Search, Key, Power, PowerOff, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Input } from "@/components/ui/input"
@@ -14,10 +14,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-
-import CreateUserDialog from "./CreateUserDialog"
-import UserActions from "./UserActions"
 
 interface Profile {
   id: string
@@ -30,147 +43,280 @@ interface Profile {
 }
 
 export default function UsersPage() {
+  const supabase = createClient()
+
   const [users, setUsers] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isResetOpen, setIsResetOpen] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<Profile | null>(null)
+
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "sales",
+    phone: "",
+  })
 
   useEffect(() => {
     fetchUsers()
   }, [])
 
-  const fetchUsers = async () => {
-    try {
-      const supabase = createClient()
+  async function fetchUsers() {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false })
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, email, role, active, created_at, phone")
-        .order("created_at", { ascending: false })
+    if (error) toast.error(error.message)
+    else setUsers(data || [])
 
-      if (error) throw error
-      setUsers(data as Profile[])
-    } catch (err: any) {
-      toast.error(err.message)
-    } finally {
-      setLoading(false)
+    setLoading(false)
+  }
+
+  /* ================= CREATE USER ================= */
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+
+    const { data: authData, error: authError } =
+      await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: { name: formData.name },
+        },
+      })
+
+    if (authError) {
+      toast.error(authError.message)
+      return
+    }
+
+    if (!authData.user) {
+      toast.error("Failed to create user")
+      return
+    }
+
+    const { error: profileError } = await supabase.from("profiles").insert({
+      id: authData.user.id,
+      full_name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      role: formData.role,
+      active: true,
+    })
+
+    if (profileError) {
+      toast.error(profileError.message)
+      return
+    }
+
+    toast.success("User created successfully")
+    setIsCreateOpen(false)
+    fetchUsers()
+  }
+
+  /* ================= TOGGLE STATUS ================= */
+  async function handleToggle(user: Profile) {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ active: !user.active })
+      .eq("id", user.id)
+
+    if (error) toast.error(error.message)
+    else {
+      toast.success("User status updated")
+      fetchUsers()
     }
   }
 
-  const filteredUsers = users.filter(
+  /* ================= DELETE USER ================= */
+  async function handleDelete(user: Profile) {
+    if (!confirm("Are you sure?")) return
+
+    const { error } = await supabase
+      .from("profiles")
+      .delete()
+      .eq("id", user.id)
+
+    if (error) toast.error(error.message)
+    else {
+      toast.success("User deleted")
+      fetchUsers()
+    }
+  }
+
+  /* ================= RESET PASSWORD ================= */
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedUser) return
+
+    const { error } = await supabase.auth.updateUser({
+      password: formData.password,
+    })
+
+    if (error) toast.error(error.message)
+    else {
+      toast.success("Password updated")
+      setIsResetOpen(false)
+    }
+  }
+
+  const filtered = users.filter(
     (u) =>
       u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-      u.email?.toLowerCase().includes(search.toLowerCase()) ||
-      u.role?.toLowerCase().includes(search.toLowerCase())
+      u.email?.toLowerCase().includes(search.toLowerCase())
   )
 
   return (
-    <div className="space-y-8">
-
-      {/* HEADER */}
+    <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight">
-            Users
-          </h1>
-          <p className="text-sm text-gray-500">
-            Manage your sales team and administrators.
-          </p>
-        </div>
+        <h1 className="text-3xl font-bold">Users</h1>
 
-        <CreateUserDialog />
+        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <DialogTrigger asChild>
+            <button className="flex items-center gap-2 rounded-xl bg-black px-6 py-3 text-sm font-bold text-white">
+              <Plus className="h-4 w-4" />
+              Add User
+            </button>
+          </DialogTrigger>
+
+          <DialogContent className="sm:max-w-[520px] rounded-2xl p-8">
+            <form onSubmit={handleCreate} className="space-y-6">
+              <DialogHeader>
+                <DialogTitle>Create User</DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-2">
+                <Label>Full Name</Label>
+                <Input
+                  required
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  required
+                  onChange={(e) =>
+                    setFormData({ ...formData, email: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Phone</Label>
+                <Input
+                  required
+                  onChange={(e) =>
+                    setFormData({ ...formData, phone: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Password</Label>
+                <Input
+                  type="password"
+                  required
+                  onChange={(e) =>
+                    setFormData({ ...formData, password: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select
+                  defaultValue="sales"
+                  onValueChange={(v) =>
+                    setFormData({ ...formData, role: v })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="sales">Sales</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <DialogFooter>
+                <button
+                  type="submit"
+                  className="w-full bg-black text-white rounded-xl py-3"
+                >
+                  Create User
+                </button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {/* SEARCH */}
-      <div className="relative">
-        <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-        <Input
-          placeholder="Search by name, email or role..."
-          className="pl-10"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
+      {/* Search */}
+      <Input
+        placeholder="Search..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
 
-      {/* TABLE */}
-      <div className="rounded-2xl border shadow-sm overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>User</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Joined</TableHead>
-              <TableHead className="text-right">
-                Actions
-              </TableHead>
+      {/* Table */}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>User</TableHead>
+            <TableHead>Role</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
+          {filtered.map((user) => (
+            <TableRow key={user.id}>
+              <TableCell>
+                <div className="font-bold">{user.full_name}</div>
+                <div className="text-xs text-gray-400">
+                  {user.email}
+                </div>
+              </TableCell>
+
+              <TableCell>
+                <Badge>{user.role}</Badge>
+              </TableCell>
+
+              <TableCell>
+                {user.active ? "Active" : "Inactive"}
+              </TableCell>
+
+              <TableCell className="flex gap-3">
+                <button onClick={() => handleToggle(user)}>
+                  {user.active ? (
+                    <PowerOff className="h-4 w-4" />
+                  ) : (
+                    <Power className="h-4 w-4" />
+                  )}
+                </button>
+
+                <button onClick={() => handleDelete(user)}>
+                  <Trash2 className="h-4 w-4 text-red-500" />
+                </button>
+              </TableCell>
             </TableRow>
-          </TableHeader>
-
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center py-10 text-gray-400">
-                  Loading users...
-                </TableCell>
-              </TableRow>
-            ) : filteredUsers.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center py-10 text-gray-400">
-                  No users found.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredUsers.map((user) => (
-                <TableRow key={user.id} className="hover:bg-gray-50 transition-colors">
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-semibold">
-                        {user.full_name}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        {user.email}
-                      </span>
-                    </div>
-                  </TableCell>
-
-                  <TableCell>
-                    <Badge
-                      className={
-                        user.role === "admin"
-                          ? "bg-black text-white"
-                          : "bg-gray-100 text-gray-600"
-                      }
-                    >
-                      {user.role}
-                    </Badge>
-                  </TableCell>
-
-                  <TableCell>
-                    <span
-                      className={
-                        user.active
-                          ? "text-emerald-600 font-medium"
-                          : "text-red-600 font-medium"
-                      }
-                    >
-                      {user.active ? "Active" : "Inactive"}
-                    </span>
-                  </TableCell>
-
-                  <TableCell>
-                    {new Date(user.created_at).toLocaleDateString()}
-                  </TableCell>
-
-                  <TableCell className="text-right">
-                    <UserActions user={user} />
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
+          ))}
+        </TableBody>
+      </Table>
     </div>
   )
 }
