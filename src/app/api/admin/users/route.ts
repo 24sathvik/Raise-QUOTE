@@ -15,7 +15,12 @@ export async function GET(request: Request) {
     const authHeader = request.headers.get('Authorization')
     if (authHeader) {
       const token = authHeader.replace('Bearer ', '')
-      const { data: { user: authUser } } = await supabase.auth.getUser(token)
+      // Use a FRESH stateless client to verify token, bypassing any cookie issues
+      const supabasePure = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      const { data: { user: authUser } } = await supabasePure.auth.getUser(token)
       user = authUser
     }
   }
@@ -67,7 +72,11 @@ export async function POST(request: Request) {
       const authHeader = request.headers.get('Authorization')
       if (authHeader) {
         const token = authHeader.replace('Bearer ', '')
-        const { data: { user: authUser } } = await supabase.auth.getUser(token)
+        const supabasePure = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        const { data: { user: authUser } } = await supabasePure.auth.getUser(token)
         user = authUser
       }
     }
@@ -142,7 +151,11 @@ export async function PATCH(request: Request) {
       const authHeader = request.headers.get('Authorization')
       if (authHeader) {
         const token = authHeader.replace('Bearer ', '')
-        const { data: { user: authUser } } = await supabase.auth.getUser(token)
+        const supabasePure = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        const { data: { user: authUser } } = await supabasePure.auth.getUser(token)
         user = authUser
       }
     }
@@ -213,7 +226,11 @@ export async function DELETE(request: Request) {
       const authHeader = request.headers.get('Authorization')
       if (authHeader) {
         const token = authHeader.replace('Bearer ', '')
-        const { data: { user: authUser } } = await supabase.auth.getUser(token)
+        const supabasePure = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        const { data: { user: authUser } } = await supabasePure.auth.getUser(token)
         user = authUser
       }
     }
