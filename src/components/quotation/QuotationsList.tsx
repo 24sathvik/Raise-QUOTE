@@ -36,7 +36,6 @@ export default function QuotationsList() {
   const [search, setSearch] = useState("")
 
   useEffect(() => {
-    // Get initial user and set up auth listener
     const initAuth = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       setUser(user)
@@ -49,7 +48,6 @@ export default function QuotationsList() {
 
     initAuth()
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setUser(session?.user ?? null)
@@ -79,7 +77,6 @@ export default function QuotationsList() {
     setLoading(true)
 
     try {
-      // RLS will automatically filter, but we add .eq() for clarity
       const { data, error } = await supabase
         .from("quotations")
         .select(`
@@ -214,21 +211,15 @@ export default function QuotationsList() {
                     </TableCell>
                     <TableCell className="text-right">
                       {q.pdf_url ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          asChild
-                          className="h-8 w-8 p-0"
+                        
+                          href={q.pdf_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-black transition-all"
+                          title="Download PDF"
                         >
-                          
-                            href={q.pdf_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Download PDF"
-                          >
-                            <Download className="h-4 w-4" />
-                          </a>
-                        </Button>
+                          <Download className="h-4 w-4" />
+                        </a>
                       ) : (
                         <span className="text-xs text-gray-400">No PDF</span>
                       )}
