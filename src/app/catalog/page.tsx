@@ -5,7 +5,7 @@ import { Search, Package } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import BackButton from '@/components/back-button'
+import { Button } from "@/components/ui/button"
 
 export const revalidate = 0
 
