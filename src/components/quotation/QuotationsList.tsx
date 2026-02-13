@@ -36,81 +36,81 @@ export default function QuotationsList() {
   const [refreshing, setRefreshing] = useState(false)
   const [search, setSearch] = useState("")
   const [role, setRole] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
 
   useEffect(() => {
-    initialize()
-  }, [])
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
 
-  const initialize = async () => {
-    try {
-      setLoading(true)
-
-      // 1️⃣ Get authenticated user
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-      if (authError || !user) {
-        toast.error("Authentication failed")
+      if (!session?.user) {
+        setLoading(false)
         return
       }
 
-      // 2️⃣ Fetch role from profiles table
-      const { data: profile, error: profileError } = await supabase
+      setUserId(session.user.id)
+
+      // Fetch role
+      const { data: profile } = await supabase
         .from("profiles")
         .select("role")
-        .eq("id", user.id)
+        .eq("id", session.user.id)
         .single()
 
-      if (profileError || !profile) {
-        toast.error("Unable to verify user role")
+      if (!profile) {
+        toast.error("User profile not found")
+        setLoading(false)
         return
       }
 
       setRole(profile.role)
 
-      // 3️⃣ Fetch quotations based on role
-      await fetchQuotations(user.id, profile.role)
-
-    } catch (err: any) {
-      toast.error(err.message)
-    } finally {
+      await fetchQuotations(session.user.id, profile.role)
       setLoading(false)
     }
-  }
 
-  const fetchQuotations = async (userId: string, userRole: string) => {
-    try {
-      let query = supabase
-        .from("quotations")
-        .select(`
-          id,
-          quotation_number,
-          customer_name,
-          grand_total,
-          created_at,
-          pdf_url,
-          profiles!created_by (full_name)
-        `)
-        .order("created_at", { ascending: false })
+    init()
 
-      // 🔐 Restrict sales users
-      if (userRole !== "admin") {
-        query = query.eq("created_by", userId)
-      }
+    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+      init()
+    })
 
-      const { data, error } = await query
-
-      if (error) throw error
-
-      setQuotations(data as any)
-
-    } catch (err: any) {
-      toast.error(err.message)
+    return () => {
+      listener.subscription.unsubscribe()
     }
+  }, [])
+
+  const fetchQuotations = async (uid: string, userRole: string) => {
+    let query = supabase
+      .from("quotations")
+      .select(`
+        id,
+        quotation_number,
+        customer_name,
+        grand_total,
+        created_at,
+        pdf_url,
+        profiles!created_by (full_name)
+      `)
+      .order("created_at", { ascending: false })
+
+    if (userRole !== "admin") {
+      query = query.eq("created_by", uid)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+
+    setQuotations(data as any)
   }
 
   const handleRefresh = async () => {
+    if (!userId || !role) return
     setRefreshing(true)
-    await initialize()
+    await fetchQuotations(userId, role)
     setRefreshing(false)
   }
 
@@ -127,19 +127,14 @@ export default function QuotationsList() {
         <div className="flex items-center gap-4">
           <Link
             href={role === "admin" ? "/admin/quotations" : "/"}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-100 bg-white text-gray-400 hover:text-black hover:shadow-sm transition-all"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border bg-white"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-black">
+            <h1 className="text-3xl font-black">
               {role === "admin" ? "All Quotations" : "My Quotations"}
             </h1>
-            <p className="text-sm font-medium text-gray-400">
-              {role === "admin"
-                ? "Monitor all team quotations."
-                : "Track your generated quotations."}
-            </p>
           </div>
         </div>
 
@@ -148,82 +143,64 @@ export default function QuotationsList() {
           size="sm"
           onClick={handleRefresh}
           disabled={refreshing || loading}
-          className="rounded-xl gap-2 font-bold"
+          className="gap-2"
         >
           <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
 
-      <div className="relative flex-1">
-        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-        <Input
-          placeholder="Search by customer or quotation number..."
-          className="h-12 rounded-xl border-none bg-white pl-11 shadow-sm ring-1 ring-gray-100 focus:ring-black transition-all"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
+      <Input
+        placeholder="Search..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
 
-      <div className="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-gray-100">
-        <div className="min-w-[800px]">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Number</TableHead>
-                <TableHead>Customer</TableHead>
-                {role === "admin" && <TableHead>Salesperson</TableHead>}
-                <TableHead>Amount</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Number</TableHead>
+            <TableHead>Customer</TableHead>
+            {role === "admin" && <TableHead>Salesperson</TableHead>}
+            <TableHead>Amount</TableHead>
+            <TableHead>Date</TableHead>
+            <TableHead>PDF</TableHead>
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
+          {loading ? (
+            <TableRow>
+              <TableCell colSpan={6}>Loading...</TableCell>
+            </TableRow>
+          ) : filteredQuotations.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6}>No quotations found</TableCell>
+            </TableRow>
+          ) : (
+            filteredQuotations.map((q) => (
+              <TableRow key={q.id}>
+                <TableCell>{q.quotation_number}</TableCell>
+                <TableCell>{q.customer_name}</TableCell>
+                {role === "admin" && (
+                  <TableCell>{q.profiles?.full_name}</TableCell>
+                )}
+                <TableCell>₹{q.grand_total}</TableCell>
+                <TableCell>
+                  {new Date(q.created_at).toLocaleDateString()}
+                </TableCell>
+                <TableCell>
+                  {q.pdf_url && (
+                    <a href={q.pdf_url} target="_blank">
+                      <Download className="h-4 w-4" />
+                    </a>
+                  )}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={role === "admin" ? 6 : 5}>
-                    Loading...
-                  </TableCell>
-                </TableRow>
-              ) : filteredQuotations.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={role === "admin" ? 6 : 5}>
-                    No quotations found.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredQuotations.map((q) => (
-                  <TableRow key={q.id}>
-                    <TableCell>{q.quotation_number}</TableCell>
-                    <TableCell>{q.customer_name}</TableCell>
-
-                    {role === "admin" && (
-                      <TableCell>{q.profiles?.full_name}</TableCell>
-                    )}
-
-                    <TableCell>₹{q.grand_total?.toLocaleString()}</TableCell>
-                    <TableCell>
-                      {new Date(q.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {q.pdf_url && (
-                        <a
-                          href={q.pdf_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <Download className="h-4 w-4 inline" />
-                        </a>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+            ))
+          )}
+        </TableBody>
+      </Table>
     </div>
   )
 }
