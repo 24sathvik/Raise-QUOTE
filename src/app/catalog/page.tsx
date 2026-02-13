@@ -5,26 +5,30 @@ import { Search, Package } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import BackButton from '@/components/back-button'
 
-export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export default async function CatalogPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
+  const { data: { session } } = await supabase.auth.getSession()
 
+  if (!session) {
+    redirect('/auth/login')
+  }
 
-  // Fetch products - use empty array if query fails to prevent page errors
   let products: any[] = []
+
   try {
     const { data } = await supabase
       .from('products')
       .select('id, name, description, price, image_url, sku, specs, category, active')
       .eq('active', true)
       .order('name')
+
     products = data || []
   } catch (error) {
-    // Gracefully handle query errors - show empty catalog instead of redirecting
     console.error('Products query error:', error)
     products = []
   }
@@ -32,9 +36,17 @@ export default async function CatalogPage() {
   return (
     <div className="min-h-screen bg-gray-50/50 p-8">
       <div className="mx-auto max-w-6xl space-y-8">
+
+        {/* 🔹 Back Button */}
+        <BackButton />
+
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-black">Product Catalog</h1>
-          <p className="text-sm font-medium text-gray-400">View detailed pharmaceutical engineering specifications.</p>
+          <h1 className="text-3xl font-black tracking-tight text-black">
+            Product Catalog
+          </h1>
+          <p className="text-sm font-medium text-gray-400">
+            View detailed pharmaceutical engineering specifications.
+          </p>
         </div>
 
         <div className="relative">
@@ -46,15 +58,18 @@ export default async function CatalogPage() {
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {products?.map((product) => (
-            <Card key={product.id} className="group overflow-hidden border-none bg-white shadow-sm ring-1 ring-gray-100 rounded-2xl transition-all hover:shadow-xl hover:shadow-black/5">
+          {products.map((product, index) => (
+            <Card
+              key={product.id}
+              className="group overflow-hidden border-none bg-white shadow-sm ring-1 ring-gray-100 rounded-2xl transition-all hover:shadow-xl hover:shadow-black/5"
+            >
               <div className="relative h-48 w-full bg-gray-50/50">
                 {product.image_url ? (
                   <Image
                     src={product.image_url}
                     alt={product.name}
                     fill
-                    priority={products?.indexOf(product) < 6}
+                    priority={index < 6}
                     sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                     className="object-contain p-6 transition-transform group-hover:scale-105"
                   />
@@ -63,29 +78,44 @@ export default async function CatalogPage() {
                     <Package className="h-12 w-12" />
                   </div>
                 )}
+
                 <div className="absolute top-4 left-4">
                   <Badge className="bg-white/80 backdrop-blur-md text-black border-none font-bold text-[10px] uppercase tracking-wider px-3 py-1">
                     {product.category || 'General'}
                   </Badge>
                 </div>
               </div>
+
               <CardHeader className="p-6 pb-2">
-                <div className="flex justify-between items-start">
-                  <CardTitle className="text-lg font-black tracking-tight text-black uppercase">{product.name}</CardTitle>
-                </div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{product.sku}</p>
+                <CardTitle className="text-lg font-black tracking-tight text-black uppercase">
+                  {product.name}
+                </CardTitle>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                  {product.sku}
+                </p>
               </CardHeader>
+
               <CardContent className="p-6 pt-0 space-y-4">
-                <p className="text-sm text-gray-500 line-clamp-2 leading-relaxed">{product.description}</p>
+                <p className="text-sm text-gray-500 line-clamp-2 leading-relaxed">
+                  {product.description}
+                </p>
+
                 <div className="flex items-center justify-between">
-                  <span className="text-xl font-black tracking-tighter text-black">₹{product.price.toLocaleString()}</span>
+                  <span className="text-xl font-black tracking-tighter text-black">
+                    ₹{product.price ? product.price.toLocaleString() : '0'}
+                  </span>
                 </div>
-                {product.specs && (
+
+                {Array.isArray(product.specs) && product.specs.length > 0 && (
                   <div className="pt-4 border-t border-gray-50 grid grid-cols-2 gap-2">
-                    {(product.specs as any[]).slice(0, 2).map((spec, i) => (
+                    {product.specs.slice(0, 2).map((spec: any, i: number) => (
                       <div key={i} className="space-y-0.5">
-                        <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{spec.key}</p>
-                        <p className="text-[10px] font-bold text-black truncate">{spec.value}</p>
+                        <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">
+                          {spec.key}
+                        </p>
+                        <p className="text-[10px] font-bold text-black truncate">
+                          {spec.value}
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -94,6 +124,7 @@ export default async function CatalogPage() {
             </Card>
           ))}
         </div>
+
       </div>
     </div>
   )
