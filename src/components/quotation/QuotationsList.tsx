@@ -36,11 +36,17 @@ export default function QuotationsList() {
   const [search, setSearch] = useState("")
 
   useEffect(() => {
+    let mounted = true
+
     const initAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-      if (user) {
-        fetchQuotations(user)
+      const { data } = await supabase.auth.getUser()
+      if (!mounted) return
+
+      const currentUser = data.user
+      setUser(currentUser)
+
+      if (currentUser) {
+        await fetchQuotations(currentUser)
       } else {
         setLoading(false)
       }
@@ -48,11 +54,15 @@ export default function QuotationsList() {
 
     initAuth()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setUser(session?.user ?? null)
-        if (session?.user) {
-          fetchQuotations(session.user)
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (_, session) => {
+        if (!mounted) return
+
+        const currentUser = session?.user ?? null
+        setUser(currentUser)
+
+        if (currentUser) {
+          await fetchQuotations(currentUser)
         } else {
           setQuotations([])
           setLoading(false)
@@ -61,19 +71,12 @@ export default function QuotationsList() {
     )
 
     return () => {
-      subscription.unsubscribe()
+      mounted = false
+      authListener.subscription.unsubscribe()
     }
   }, [])
 
-  const fetchQuotations = async (currentUser?: User) => {
-    const userToUse = currentUser || user
-    
-    if (!userToUse) {
-      toast.error("Please log in to view quotations")
-      setLoading(false)
-      return
-    }
-
+  const fetchQuotations = async (currentUser: User) => {
     setLoading(true)
 
     try {
@@ -87,7 +90,7 @@ export default function QuotationsList() {
           created_at,
           pdf_url
         `)
-        .eq("created_by", userToUse.id)
+        .eq("created_by", currentUser.id) // ✅ STRICT USER FILTER
         .order("created_at", { ascending: false })
 
       if (error) throw error
@@ -102,13 +105,13 @@ export default function QuotationsList() {
     }
   }
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     if (!user) {
       toast.error("Please log in first")
       return
     }
     setRefreshing(true)
-    fetchQuotations()
+    await fetchQuotations(user)
   }
 
   const filteredQuotations = quotations.filter(
@@ -117,12 +120,14 @@ export default function QuotationsList() {
       q.quotation_number?.toLowerCase().includes(search.toLowerCase())
   )
 
-  if (!user) {
+  if (!user && !loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-2">Please Log In</h2>
-          <p className="text-gray-600">You need to be logged in to view quotations</p>
+          <p className="text-gray-600">
+            You need to be logged in to view quotations
+          </p>
         </div>
       </div>
     )
@@ -195,23 +200,27 @@ export default function QuotationsList() {
               ) : filteredQuotations.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8">
-                    {search ? "No matching quotations found." : "No quotations yet. Create your first one!"}
+                    {search
+                      ? "No matching quotations found."
+                      : "No quotations yet. Create your first one!"}
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredQuotations.map((q) => (
                   <TableRow key={q.id}>
-                    <TableCell className="font-medium">{q.quotation_number}</TableCell>
+                    <TableCell className="font-medium">
+                      {q.quotation_number}
+                    </TableCell>
                     <TableCell>{q.customer_name}</TableCell>
                     <TableCell className="font-semibold">
-                      ₹{q.grand_total?.toLocaleString('en-IN')}
+                      ₹{q.grand_total?.toLocaleString("en-IN")}
                     </TableCell>
                     <TableCell>
-                      {new Date(q.created_at).toLocaleDateString('en-IN')}
+                      {new Date(q.created_at).toLocaleDateString("en-IN")}
                     </TableCell>
                     <TableCell className="text-right">
                       {q.pdf_url ? (
-                        
+                        <a
                           href={q.pdf_url}
                           target="_blank"
                           rel="noopener noreferrer"
