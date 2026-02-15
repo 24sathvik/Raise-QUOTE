@@ -58,7 +58,7 @@ export function AdminSidebar() {
   const pathname = usePathname()
 
   return (
-    <Sidebar variant="sidebar" collapsible="none">
+    <Sidebar variant="inset" collapsible="icon">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-3 px-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-black text-white">
