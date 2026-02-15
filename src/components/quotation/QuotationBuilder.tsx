@@ -188,8 +188,25 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
           setMeta(prev => ({ ...prev, date: parsed.meta.date, validity_days: parsed.meta.validity_days || 30 }))
         }
         setDiscount(parsed.discount || 0)
+        
+        // ✅ Migrate old warranty format to new format
         if (parsed.terms) {
-          setTerms(parsed.terms)
+          const hasOldWarrantyFormat = parsed.terms.some((t: Term) => 
+            t.text === "WARRANTY: One year warranty from the date of dispatch"
+          )
+          
+          if (hasOldWarrantyFormat) {
+            // Old format detected - use new default terms instead
+            console.log("Migrating old warranty format to new multi-option format")
+            setTerms(DEFAULT_TERMS.map((t, i) => ({ 
+              id: `term-${i}`, 
+              text: t, 
+              selected: t.startsWith('WARRANTY_2') || t.startsWith('WARRANTY_3') ? false : true 
+            })))
+          } else {
+            // New format - load as is
+            setTerms(parsed.terms)
+          }
         }
       } catch (e) {
         console.error("Failed to load draft", e)
