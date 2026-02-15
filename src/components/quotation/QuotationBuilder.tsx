@@ -216,26 +216,30 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   }, [items, discount])
 
   const addItem = useCallback((product: Product) => {
-    const newItem: QuotationItem = {
-      id: Math.random().toString(36).slice(2),
-      product_id: product.id,
-      name: product.name,
-      description: product.description,
-      qty: 1,
-      price: Number(product.price),
-      base_price: Number(product.price), // Set base price
-      mrp: product.mrp ? Number(product.mrp) : Number(product.price), // Set MRP (fallback to price)
-      image_url: product.image_url,
-      sku: product.sku,
-      // Add all addons by default as requested
-      selectedAddons: product.addons ? product.addons.map(a => ({ name: a.name, price: a.price })) : [],
-      specs: product.specs || [],
-      features: product.features || [],
-      image_format: product.image_format || 'wide'
+    try {
+      const newItem: QuotationItem = {
+        id: Math.random().toString(36).slice(2),
+        product_id: product.id,
+        name: product.name,
+        description: product.description,
+        qty: 1,
+        price: Number(product.price),
+        base_price: Number(product.price), // Set base price
+        mrp: product.mrp ? Number(product.mrp) : Number(product.price), // Set MRP (fallback to price)
+        image_url: product.image_url,
+        sku: product.sku,
+        // Add all addons by default as requested
+        selectedAddons: product.addons ? product.addons.map(a => ({ name: a.name, price: a.price })) : [],
+        specs: product.specs || [],
+        features: product.features || [],
+        image_format: product.image_format || 'wide'
+      }
+      setItems(prev => [...prev, newItem])
+      setIsProductOpen(false)
+      toast.success(`${product.name} added with all addons selected`)
+    } catch (error) {
+      toast.error("Failed to add product. Please check product data.")
     }
-    setItems(prev => [...prev, newItem])
-    setIsProductOpen(false)
-    toast.success(`${product.name} added with all addons selected`)
   }, [])
 
   const updateItem = useCallback((id: string, updates: Partial<QuotationItem>) => {
@@ -578,8 +582,11 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                     <Input
                       type="number"
                       className="h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all"
-                      value={meta.validity_days}
-                      onChange={(e) => setMeta({ ...meta, validity_days: parseInt(e.target.value) || 30 })}
+                      value={meta.validity_days || ''}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value)
+                        setMeta({ ...meta, validity_days: isNaN(val) ? 0 : val })
+                      }}
                       min="1"
                     />
                   </div>
@@ -659,6 +666,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                           {initialProducts.map((product) => (
                             <CommandItem
                               key={product.id}
+                              value={`${product.name} ${product.sku || ''}`}
                               onSelect={() => addItem(product)}
                               className="flex items-center gap-3 rounded-xl p-3 cursor-pointer aria-selected:bg-gray-50 transition-all"
                             >
@@ -667,7 +675,9 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                               </div>
                               <div className="flex flex-col">
                                 <span className="text-sm font-bold text-black">{product.name}</span>
-                                <span className="text-[10px] font-bold text-gray-400 uppercase">{currency === 'INR' ? '₹' : '$'}{product.price.toLocaleString()}</span>
+                                <span className="text-[10px] font-bold text-gray-400 uppercase">
+                                  {currency === 'INR' ? '₹' : '$'}{Number(product.price).toLocaleString()}
+                                </span>
                               </div>
                             </CommandItem>
                           ))}
