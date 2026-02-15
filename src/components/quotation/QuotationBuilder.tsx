@@ -400,35 +400,34 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
           </div>
 
           <nav className="flex-1 space-y-1 px-4 py-6">
-  <Link
-    href="/"
-    className="flex items-center gap-3 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-lg transition-all"
-  >
-    <Plus className="h-5 w-5" />
-    New Quotation
-  </Link>
+            <Link
+              href="/"
+              className="flex items-center gap-3 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-lg transition-all"
+            >
+              <Plus className="h-5 w-5" />
+              New Quotation
+            </Link>
 
-  <div className="my-6 h-px bg-gray-50" />
+            <div className="my-6 h-px bg-gray-50" />
 
-  <Link
-    href={user?.role === 'admin' ? "/admin/products" : "/catalog"}
-    className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
-  >
-    <Package className="h-5 w-5" />
-    Catalog
-  </Link>
+            <Link
+              href={user?.role === 'admin' ? "/admin/products" : "/catalog"}
+              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
+            >
+              <Package className="h-5 w-5" />
+              Catalog
+            </Link>
 
-  {user?.role === 'admin' && (
-    <Link
-      href="/admin/users"
-      className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
-    >
-      <User className="h-5 w-5" />
-      Team
-    </Link>
-  )}
-</nav>
-
+            {user?.role === 'admin' && (
+              <Link
+                href="/admin/users"
+                className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
+              >
+                <User className="h-5 w-5" />
+                Team
+              </Link>
+            )}
+          </nav>
 
           <div className="border-t border-gray-50 p-4">
             <div className="flex items-center gap-3 px-2 py-3 rounded-xl bg-gray-50/50">
@@ -474,13 +473,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
             <div className="flex flex-wrap items-center gap-3">
               <Button variant="outline" onClick={clearQuotation} className="h-11 rounded-xl px-5 font-bold border-gray-200 hover:bg-red-50 hover:text-red-600 transition-all">
                 Reset
-              </Button>
-              <Button
-                disabled={saving}
-                onClick={handleDownload}
-                className="h-11 flex-1 rounded-xl bg-black px-8 font-bold text-white shadow-xl shadow-black/20 hover:bg-black/90 active:scale-95 transition-all sm:flex-none"
-              >
-                {saving ? "Generating..." : "Download PDF"}
               </Button>
             </div>
           </header>
@@ -906,6 +898,17 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                 </div>
               </CardContent>
             </Card>
+
+            {/* Download PDF Button - Bottom */}
+            <div className="flex justify-center pt-4">
+              <Button
+                disabled={saving}
+                onClick={handleDownload}
+                className="h-14 w-full max-w-md rounded-xl bg-black px-8 font-bold text-white shadow-xl shadow-black/20 hover:bg-black/90 active:scale-95 transition-all"
+              >
+                {saving ? "Generating..." : "Download PDF"}
+              </Button>
+            </div>
           </div>
         </div>
       </main>
