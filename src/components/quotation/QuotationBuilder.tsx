@@ -56,6 +56,9 @@ import {
 import { generateQuotationPDF } from "@/lib/pdf-service"
 import { createClient } from "@/lib/supabase/client"
 
+// 🔥 MARGIN CONFIGURATION
+const MARGIN_PERCENTAGE = 30 // Sales sees 30% markup over base price
+
 interface Product {
   id: string
   name: string
@@ -76,7 +79,9 @@ interface QuotationItem {
   name: string
   description: string
   qty: number
-  price: number
+  base_price: number    // Floor price (cannot go below)
+  mrp: number           // Calculated selling price (base + 30%)
+  price: number         // Editable selling price (starts at MRP)
   image_url: string | null
   sku: string
   selectedAddons?: { name: string; price: number }[]
@@ -173,7 +178,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         const parsed = JSON.parse(draft)
         setItems(parsed.items || [])
         setCustomer(parsed.customer || { name: "", phone: "", email: "", address: "" })
-        // Don't load quotation number from draft - always use fresh sequential number
         if (parsed.meta?.date) {
           setMeta(prev => ({ ...prev, date: parsed.meta.date, validity_days: parsed.meta.validity_days || 30 }))
         }
@@ -194,7 +198,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         "quotation_draft",
         JSON.stringify({ items, customer, meta, discount, terms })
       )
-    }, 1000) // Debounce for 1 second
+    }, 1000)
 
     return () => clearTimeout(timeoutId)
   }, [items, customer, meta, discount, terms])
@@ -205,7 +209,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       return acc + (item.price + addonsPrice) * item.qty
     }, 0)
 
-    // Tax completely removed as per request
     const tax_amount = 0
     const grand_total = Math.max(0, subtotal - discount)
 
@@ -213,16 +216,20 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   }, [items, discount])
 
   const addItem = useCallback((product: Product) => {
+    const basePrice = product.price  // Base price from DB
+    const mrp = basePrice * (1 + MARGIN_PERCENTAGE / 100)  // Calculate MRP with 30% margin
+    
     const newItem: QuotationItem = {
       id: Math.random().toString(36).slice(2),
       product_id: product.id,
       name: product.name,
       description: product.description,
       qty: 1,
-      price: product.price,
+      base_price: basePrice,           // Floor price
+      mrp: mrp,                         // Suggested selling price
+      price: mrp,                       // Start at MRP
       image_url: product.image_url,
       sku: product.sku,
-      // Add all addons by default as requested
       selectedAddons: product.addons ? product.addons.map(a => ({ name: a.name, price: a.price })) : [],
       specs: product.specs || [],
       features: product.features || [],
@@ -230,12 +237,27 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     }
     setItems(prev => [...prev, newItem])
     setIsProductOpen(false)
-    toast.success(`${product.name} added with all addons selected`)
-  }, [])
+    toast.success(`${product.name} added at MRP ${currency === 'INR' ? '₹' : '$'}${mrp.toLocaleString()}`)
+  }, [currency])
 
   const updateItem = useCallback((id: string, updates: Partial<QuotationItem>) => {
-    setItems(items => items.map((item) => (item.id === id ? { ...item, ...updates } : item)))
-  }, [])
+    setItems(items => items.map((item) => {
+      if (item.id === id) {
+        // Validate price against base_price
+        if (updates.price !== undefined) {
+          if (updates.price < item.base_price) {
+            toast.error(
+              `Cannot go below base price ${currency === 'INR' ? '₹' : '$'}${item.base_price.toLocaleString()}`,
+              { duration: 3000 }
+            )
+            return item // Don't update, keep old value
+          }
+        }
+        return { ...item, ...updates }
+      }
+      return item
+    }))
+  }, [currency])
 
   const removeItem = useCallback((id: string) => {
     setItems(items => items.filter((item) => item.id !== id))
@@ -263,7 +285,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     if (!confirm("Are you sure you want to clear this quotation?")) return
     setItems([])
     setCustomer({ name: "", phone: "", email: "", address: "" })
-    // Fetch fresh sequential number instead of random one
     const triggerRefetch = async () => {
       const { data: lastQuotation } = await supabase
         .from('quotations')
@@ -310,7 +331,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         return
       }
 
-      // We already have user in props, no need to call getSession which might abort
       const { data, error } = await supabase.from("quotations").insert({
         quotation_number: meta.number,
         created_by: user.id,
@@ -325,7 +345,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         total_amount: totals.grand_total,
         discount_total: discount,
         grand_total: totals.grand_total,
-        // validity_date removed to prevent schema error if column missing
       }).select().single()
 
       if (error) throw error
@@ -568,6 +587,8 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                             const conversionRate = 83
                             setItems(items.map(item => ({
                               ...item,
+                              base_price: Math.round(item.base_price * conversionRate),
+                              mrp: Math.round(item.mrp * conversionRate),
                               price: Math.round(item.price * conversionRate),
                               selectedAddons: item.selectedAddons?.map(addon => ({
                                 ...addon,
@@ -592,6 +613,8 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                             const conversionRate = 83
                             setItems(items.map(item => ({
                               ...item,
+                              base_price: Number((item.base_price / conversionRate).toFixed(2)),
+                              mrp: Number((item.mrp / conversionRate).toFixed(2)),
                               price: Number((item.price / conversionRate).toFixed(2)),
                               selectedAddons: item.selectedAddons?.map(addon => ({
                                 ...addon,
@@ -642,7 +665,10 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                               </div>
                               <div className="flex flex-col">
                                 <span className="text-sm font-bold text-black">{product.name}</span>
-                                <span className="text-[10px] font-bold text-gray-400 uppercase">{currency === 'INR' ? '₹' : '$'}{product.price.toLocaleString()}</span>
+                                <span className="text-[10px] font-bold text-gray-400 uppercase">
+                                  Base: {currency === 'INR' ? '₹' : '$'}{product.price.toLocaleString()} | 
+                                  MRP: {currency === 'INR' ? '₹' : '$'}{(product.price * (1 + MARGIN_PERCENTAGE / 100)).toLocaleString()}
+                                </span>
                               </div>
                             </CommandItem>
                           ))}
@@ -660,7 +686,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                       <TableRow className="border-gray-50 hover:bg-transparent">
                         <TableHead className="px-8 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Item Details</TableHead>
                         <TableHead className="w-[120px] text-center text-[10px] font-bold uppercase tracking-widest text-gray-400">Qty</TableHead>
-                        <TableHead className="w-[150px] text-[10px] font-bold uppercase tracking-widest text-gray-400">Unit Price</TableHead>
+                        <TableHead className="w-[180px] text-[10px] font-bold uppercase tracking-widest text-gray-400">Selling Price</TableHead>
                         <TableHead className="w-[150px] text-right text-[10px] font-bold uppercase tracking-widest text-gray-400">Total Amount</TableHead>
                         <TableHead className="w-[80px]"></TableHead>
                       </TableRow>
@@ -687,31 +713,33 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                   </div>
 
                                   {/* Addons Selection with Checkboxes */}
-                                  <div className="space-y-2">
-                                    <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Available Addons</p>
-                                    <div className="flex flex-wrap gap-3">
-                                      {initialProducts.find(p => p.id === item.product_id)?.addons?.map((addon) => (
-                                        <div
-                                          key={addon.name}
-                                          className="flex items-center space-x-2 bg-gray-50/50 px-3 py-1.5 rounded-lg border border-gray-100 hover:border-black/10 transition-colors cursor-pointer"
-                                          onClick={() => toggleAddon(item.id, addon)}
-                                        >
-                                          <Checkbox
-                                            id={`addon-${item.id}-${addon.name}`}
-                                            checked={!!item.selectedAddons?.find(a => a.name === addon.name)}
-                                            onCheckedChange={() => toggleAddon(item.id, addon)}
-                                            className="data-[state=checked]:bg-black data-[state=checked]:border-black"
-                                          />
-                                          <label
-                                            htmlFor={`addon-${item.id}-${addon.name}`}
-                                            className="text-[10px] font-bold text-gray-600 cursor-pointer"
+                                  {initialProducts.find(p => p.id === item.product_id)?.addons && initialProducts.find(p => p.id === item.product_id)?.addons!.length > 0 && (
+                                    <div className="space-y-2">
+                                      <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Available Addons</p>
+                                      <div className="flex flex-wrap gap-3">
+                                        {initialProducts.find(p => p.id === item.product_id)?.addons?.map((addon) => (
+                                          <div
+                                            key={addon.name}
+                                            className="flex items-center space-x-2 bg-gray-50/50 px-3 py-1.5 rounded-lg border border-gray-100 hover:border-black/10 transition-colors cursor-pointer"
+                                            onClick={() => toggleAddon(item.id, addon)}
                                           >
-                                            {addon.name} (+₹{addon.price.toLocaleString()})
-                                          </label>
-                                        </div>
-                                      ))}
+                                            <Checkbox
+                                              id={`addon-${item.id}-${addon.name}`}
+                                              checked={!!item.selectedAddons?.find(a => a.name === addon.name)}
+                                              onCheckedChange={() => toggleAddon(item.id, addon)}
+                                              className="data-[state=checked]:bg-black data-[state=checked]:border-black"
+                                            />
+                                            <label
+                                              htmlFor={`addon-${item.id}-${addon.name}`}
+                                              className="text-[10px] font-bold text-gray-600 cursor-pointer"
+                                            >
+                                              {addon.name} (+{currency === 'INR' ? '₹' : '$'}{addon.price.toLocaleString()})
+                                            </label>
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
-                                  </div>
+                                  )}
                                 </div>
                               </div>
                             </TableCell>
@@ -725,18 +753,40 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                               />
                             </TableCell>
                             <TableCell>
-                              <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">₹</span>
-                                <Input
-                                  type="number"
-                                  className="h-10 w-[140px] min-w-[140px] rounded-xl border-gray-100 bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white"
-                                  value={item.price}
-                                  onChange={(e) => updateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
-                                />
+                              <div className="space-y-1.5">
+                                <div className="relative">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">
+                                    {currency === 'INR' ? '₹' : '$'}
+                                  </span>
+                                  <Input
+                                    type="number"
+                                    className={`h-10 w-full rounded-xl bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white transition-all ${
+                                      item.price < item.base_price 
+                                        ? 'border-2 border-red-500 bg-red-50' 
+                                        : 'border-gray-100'
+                                    }`}
+                                    value={item.price}
+                                    onChange={(e) => updateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
+                                  />
+                                </div>
+                                {/* Price indicators */}
+                                <div className="flex items-center justify-between text-[9px] font-bold">
+                                  <span className="text-gray-400">
+                                    Base: {currency === 'INR' ? '₹' : '$'}{item.base_price.toLocaleString()}
+                                  </span>
+                                  <span className="text-green-600">
+                                    MRP: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
+                                  </span>
+                                </div>
+                                {item.price < item.base_price && (
+                                  <p className="text-[9px] font-bold text-red-500">
+                                    ⚠️ Cannot go below base price!
+                                  </p>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell className="text-right text-sm font-black text-black">
-                              ₹{((item.price + (item.selectedAddons?.reduce((s, a) => s + a.price, 0) || 0)) * item.qty).toLocaleString()}
+                              {currency === 'INR' ? '₹' : '$'}{((item.price + (item.selectedAddons?.reduce((s, a) => s + a.price, 0) || 0)) * item.qty).toLocaleString()}
                             </TableCell>
                             <TableCell className="px-8">
                               <button
@@ -791,18 +841,42 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                               />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-bold uppercase text-gray-400">Unit Price</Label>
+                              <Label className="text-[10px] font-bold uppercase text-gray-400">Selling Price</Label>
                               <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">₹</span>
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">
+                                  {currency === 'INR' ? '₹' : '$'}
+                                </span>
                                 <Input
                                   type="number"
-                                  className="h-10 w-[140px] min-w-[140px] rounded-xl border-gray-100 bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white"
+                                  className={`h-10 w-full rounded-xl bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white transition-all ${
+                                    item.price < item.base_price 
+                                      ? 'border-2 border-red-500 bg-red-50' 
+                                      : 'border-gray-100'
+                                  }`}
                                   value={item.price}
                                   onChange={(e) => updateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
                                 />
                               </div>
                             </div>
                           </div>
+
+                          {/* Price Reference Mobile */}
+                          <div className="flex items-center justify-between text-[9px] font-bold pt-2 border-t border-gray-50">
+                            <span className="text-gray-400">
+                              Base: {currency === 'INR' ? '₹' : '$'}{item.base_price.toLocaleString()}
+                            </span>
+                            <span className="text-green-600">
+                              MRP: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
+                            </span>
+                          </div>
+                          
+                          {item.price < item.base_price && (
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-2">
+                              <p className="text-[10px] font-bold text-red-600">
+                                ⚠️ Price cannot go below base price of {currency === 'INR' ? '₹' : '$'}{item.base_price.toLocaleString()}
+                              </p>
+                            </div>
+                          )}
 
                           {/* Addons Mobile */}
                           {initialProducts.find(p => p.id === item.product_id)?.addons && (initialProducts.find(p => p.id === item.product_id)?.addons?.length || 0) > 0 && (
@@ -819,7 +893,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                     onClick={() => toggleAddon(item.id, addon)}
                                   >
                                     <span className="text-[10px] font-bold">
-                                      {addon.name} (+₹{addon.price.toLocaleString()})
+                                      {addon.name} (+{currency === 'INR' ? '₹' : '$'}{addon.price.toLocaleString()})
                                     </span>
                                   </div>
                                 ))}
@@ -830,7 +904,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                           <div className="flex items-center justify-between pt-2 border-t border-gray-50">
                             <span className="text-xs font-bold text-gray-400 uppercase">Subtotal</span>
                             <span className="text-lg font-black text-black">
-                              ₹{((item.price + (item.selectedAddons?.reduce((s, a) => s + a.price, 0) || 0)) * item.qty).toLocaleString()}
+                              {currency === 'INR' ? '₹' : '$'}{((item.price + (item.selectedAddons?.reduce((s, a) => s + a.price, 0) || 0)) * item.qty).toLocaleString()}
                             </span>
                           </div>
                         </div>
