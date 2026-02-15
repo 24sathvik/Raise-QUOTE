@@ -8,6 +8,7 @@ export async function upsertProduct(formData: FormData) {
   const name = formData.get('name') as string
   const description = formData.get('description') as string
   const price = parseFloat(formData.get('price') as string)
+  const mrp = parseFloat(formData.get('mrp') as string) || 0 // Handle MRP
   const tax_percent = parseFloat(formData.get('tax_percent') as string) || 0
   const active = formData.get('active') === 'true'
   const image_format = formData.get('image_format') as string || 'wide'
@@ -23,13 +24,15 @@ export async function upsertProduct(formData: FormData) {
       specs = JSON.parse(specsString)
     }
   } catch (e) {
-    console.error('Failed to parse specs', e)
+    // console.error('Failed to parse specs', e)
   }
 
   const productData = {
     name,
     description,
     price,
+    mrp, // Add MRP to data
+
     tax_percent,
     active,
     image_url,

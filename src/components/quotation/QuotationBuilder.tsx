@@ -61,6 +61,7 @@ interface Product {
   name: string
   description: string
   price: number
+  mrp?: number // Added MRP
   image_url: string | null
   sku: string
   addons?: { name: string; price: number; active?: boolean }[]
@@ -77,6 +78,8 @@ interface QuotationItem {
   description: string
   qty: number
   price: number
+  base_price: number // Added base_price tracking
+  mrp?: number // Added MRP
   image_url: string | null
   sku: string
   selectedAddons?: { name: string; price: number }[]
@@ -157,7 +160,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
 
         setMeta(prev => ({ ...prev, number: nextNumber }))
       } catch (error) {
-        console.error('Failed to fetch quotation number:', error)
+        // console.error('Failed to fetch quotation number:', error)
         setMeta(prev => ({ ...prev, number: 'RLE-101' }))
       }
     }
@@ -182,7 +185,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
           setTerms(parsed.terms)
         }
       } catch (e) {
-        console.error("Failed to load draft", e)
+        // console.error("Failed to load draft", e)
       }
     }
   }, [])
@@ -220,6 +223,8 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       description: product.description,
       qty: 1,
       price: product.price,
+      base_price: product.price, // Set base price
+      mrp: product.mrp || product.price, // Set MRP (fallback to price)
       image_url: product.image_url,
       sku: product.sku,
       // Add all addons by default as requested
@@ -234,7 +239,19 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   }, [])
 
   const updateItem = useCallback((id: string, updates: Partial<QuotationItem>) => {
-    setItems(items => items.map((item) => (item.id === id ? { ...item, ...updates } : item)))
+    setItems(items => items.map((item) => {
+      if (item.id === id) {
+        // Price validation logic
+        if (updates.price !== undefined) {
+          if (updates.price < item.base_price) {
+            toast.error(`Price cannot be lower than Base Price (₹${item.base_price})`)
+            return item // validation failed, return original item
+          }
+        }
+        return { ...item, ...updates }
+      }
+      return item
+    }))
   }, [])
 
   const removeItem = useCallback((id: string) => {
@@ -354,7 +371,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         })
 
       if (uploadError) {
-        console.error("PDF Upload Error:", uploadError)
+        toast.error("PDF Upload Error")
       } else {
         const { data: { publicUrl } } = supabase.storage
           .from("quotations")
@@ -400,34 +417,34 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
           </div>
 
           <nav className="flex-1 space-y-1 px-4 py-6">
-  <Link
-    href="/"
-    className="flex items-center gap-3 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-lg transition-all"
-  >
-    <Plus className="h-5 w-5" />
-    New Quotation
-  </Link>
+            <Link
+              href="/"
+              className="flex items-center gap-3 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-lg transition-all"
+            >
+              <Plus className="h-5 w-5" />
+              New Quotation
+            </Link>
 
-  <div className="my-6 h-px bg-gray-50" />
+            <div className="my-6 h-px bg-gray-50" />
 
-  <Link
-    href={user?.role === 'admin' ? "/admin/products" : "/catalog"}
-    className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
-  >
-    <Package className="h-5 w-5" />
-    Catalog
-  </Link>
+            <Link
+              href={user?.role === 'admin' ? "/admin/products" : "/catalog"}
+              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
+            >
+              <Package className="h-5 w-5" />
+              Catalog
+            </Link>
 
-  {user?.role === 'admin' && (
-    <Link
-      href="/admin/users"
-      className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
-    >
-      <User className="h-5 w-5" />
-      Team
-    </Link>
-  )}
-</nav>
+            {user?.role === 'admin' && (
+              <Link
+                href="/admin/users"
+                className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
+              >
+                <User className="h-5 w-5" />
+                Team
+              </Link>
+            )}
+          </nav>
 
 
           <div className="border-t border-gray-50 p-4">
@@ -692,6 +709,12 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                   <div className="space-y-1">
                                     <p className="text-sm font-black text-black uppercase tracking-tight">{item.name}</p>
                                     <p className="text-xs text-gray-400 line-clamp-1">{item.description}</p>
+                                    {/* MRP Display */}
+                                    {item.mrp && item.mrp > item.price && (
+                                      <Badge variant="outline" className="mt-1 text-[10px] font-bold border-red-200 text-red-500 bg-red-50">
+                                        MRP: ₹{item.mrp.toLocaleString()}
+                                      </Badge>
+                                    )}
                                   </div>
 
                                   {/* Addons Selection with Checkboxes */}
@@ -777,6 +800,11 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                               <div className="pr-8">
                                 <p className="text-sm font-black text-black uppercase tracking-tight truncate">{item.name}</p>
                                 <p className="text-xs text-gray-400 line-clamp-2 mt-1">{item.description}</p>
+                                {item.mrp && item.mrp > item.price && (
+                                  <Badge variant="outline" className="mt-1 text-[10px] font-bold border-red-200 text-red-500 bg-red-50 w-fit">
+                                    MRP: ₹{item.mrp.toLocaleString()}
+                                  </Badge>
+                                )}
                               </div>
                             </div>
                             <button

@@ -16,7 +16,7 @@ export default async function SalesPage() {
   const [productsResponse, settingsResponse, profileResponse] = await Promise.all([
     supabase
       .from('products')
-      .select('id, name, description, price, image_url, sku, specs, features, category, addons, image_format')
+      .select('id, name, description, price, mrp, image_url, sku, specs, features, category, addons, image_format') // Added mrp
       .eq('active', true)
       .order('name'),
     supabase

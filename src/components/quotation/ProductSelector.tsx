@@ -61,7 +61,14 @@ export default function ProductSelector({ products, onSelect }: { products: any[
                     </div>
                     <div>
                       <div className="font-medium text-sm">{product.name}</div>
-                      <div className="text-xs text-muted-foreground">₹{product.price.toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-2">
+                        <span className="font-bold">₹{product.price.toLocaleString()}</span>
+                        {product.mrp > product.price && (
+                          <span className="text-[10px] text-gray-400 line-through">
+                            ₹{product.mrp.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CommandItem>
