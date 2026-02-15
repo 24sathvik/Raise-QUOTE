@@ -79,7 +79,7 @@ interface QuotationItem {
   name: string
   description: string
   qty: number
-  base_price: number    // Floor price (cannot go below)
+  base_price: number    // Floor price (cannot go below) - HIDDEN FROM UI
   mrp: number           // Calculated selling price (base + 30%)
   price: number         // Editable selling price (starts at MRP)
   image_url: string | null
@@ -225,7 +225,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       name: product.name,
       description: product.description,
       qty: 1,
-      base_price: basePrice,           // Floor price
+      base_price: basePrice,           // Floor price (hidden from UI)
       mrp: mrp,                         // Suggested selling price
       price: mrp,                       // Start at MRP
       image_url: product.image_url,
@@ -240,24 +240,12 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     toast.success(`${product.name} added at MRP ${currency === 'INR' ? '₹' : '$'}${mrp.toLocaleString()}`)
   }, [currency])
 
+  // ✅ FIXED: Clean updateItem - no inline validation
   const updateItem = useCallback((id: string, updates: Partial<QuotationItem>) => {
-    setItems(items => items.map((item) => {
-      if (item.id === id) {
-        // Validate price against base_price
-        if (updates.price !== undefined) {
-          if (updates.price < item.base_price) {
-            toast.error(
-              `Cannot go below base price ${currency === 'INR' ? '₹' : '$'}${item.base_price.toLocaleString()}`,
-              { duration: 3000 }
-            )
-            return item // Don't update, keep old value
-          }
-        }
-        return { ...item, ...updates }
-      }
-      return item
-    }))
-  }, [currency])
+    setItems(items => items.map((item) => 
+      item.id === id ? { ...item, ...updates } : item
+    ))
+  }, [])
 
   const removeItem = useCallback((id: string) => {
     setItems(items => items.filter((item) => item.id !== id))
@@ -665,8 +653,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                               </div>
                               <div className="flex flex-col">
                                 <span className="text-sm font-bold text-black">{product.name}</span>
-                                <span className="text-[10px] font-bold text-gray-400 uppercase">
-                                  Base: {currency === 'INR' ? '₹' : '$'}{product.price.toLocaleString()} | 
+                                <span className="text-[10px] font-bold text-green-600 uppercase">
                                   MRP: {currency === 'INR' ? '₹' : '$'}{(product.price * (1 + MARGIN_PERCENTAGE / 100)).toLocaleString()}
                                 </span>
                               </div>
@@ -760,29 +747,28 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                   </span>
                                   <Input
                                     type="number"
-                                    className={`h-10 w-full rounded-xl bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white transition-all ${
-                                      item.price < item.base_price 
-                                        ? 'border-2 border-red-500 bg-red-50' 
-                                        : 'border-gray-100'
-                                    }`}
+                                    className="h-10 w-full rounded-xl bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white transition-all border-gray-100"
                                     value={item.price}
-                                    onChange={(e) => updateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
+                                    onChange={(e) => {
+                                      const value = e.target.value
+                                      updateItem(item.id, { 
+                                        price: value === "" ? 0 : Number(value) 
+                                      })
+                                    }}
+                                    onBlur={() => {
+                                      if (item.price < item.base_price) {
+                                        toast.error("Price adjusted to minimum allowed", { duration: 2000 })
+                                        updateItem(item.id, { price: item.base_price })
+                                      }
+                                    }}
                                   />
                                 </div>
-                                {/* Price indicators */}
-                                <div className="flex items-center justify-between text-[9px] font-bold">
-                                  <span className="text-gray-400">
-                                    Base: {currency === 'INR' ? '₹' : '$'}{item.base_price.toLocaleString()}
-                                  </span>
+                                {/* Only show MRP reference */}
+                                <div className="text-right text-[9px] font-bold">
                                   <span className="text-green-600">
-                                    MRP: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
+                                    Suggested: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
                                   </span>
                                 </div>
-                                {item.price < item.base_price && (
-                                  <p className="text-[9px] font-bold text-red-500">
-                                    ⚠️ Cannot go below base price!
-                                  </p>
-                                )}
                               </div>
                             </TableCell>
                             <TableCell className="text-right text-sm font-black text-black">
@@ -848,35 +834,31 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                 </span>
                                 <Input
                                   type="number"
-                                  className={`h-10 w-full rounded-xl bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white transition-all ${
-                                    item.price < item.base_price 
-                                      ? 'border-2 border-red-500 bg-red-50' 
-                                      : 'border-gray-100'
-                                  }`}
+                                  className="h-10 w-full rounded-xl bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white transition-all border-gray-100"
                                   value={item.price}
-                                  onChange={(e) => updateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
+                                  onChange={(e) => {
+                                    const value = e.target.value
+                                    updateItem(item.id, { 
+                                      price: value === "" ? 0 : Number(value) 
+                                    })
+                                  }}
+                                  onBlur={() => {
+                                    if (item.price < item.base_price) {
+                                      toast.error("Price adjusted to minimum allowed", { duration: 2000 })
+                                      updateItem(item.id, { price: item.base_price })
+                                    }
+                                  }}
                                 />
                               </div>
                             </div>
                           </div>
 
-                          {/* Price Reference Mobile */}
-                          <div className="flex items-center justify-between text-[9px] font-bold pt-2 border-t border-gray-50">
-                            <span className="text-gray-400">
-                              Base: {currency === 'INR' ? '₹' : '$'}{item.base_price.toLocaleString()}
-                            </span>
+                          {/* Price Reference Mobile - Only show MRP */}
+                          <div className="flex justify-end text-[9px] font-bold pt-2 border-t border-gray-50">
                             <span className="text-green-600">
-                              MRP: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
+                              Suggested MRP: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
                             </span>
                           </div>
-                          
-                          {item.price < item.base_price && (
-                            <div className="bg-red-50 border border-red-200 rounded-lg p-2">
-                              <p className="text-[10px] font-bold text-red-600">
-                                ⚠️ Price cannot go below base price of {currency === 'INR' ? '₹' : '$'}{item.base_price.toLocaleString()}
-                              </p>
-                            </div>
-                          )}
 
                           {/* Addons Mobile */}
                           {initialProducts.find(p => p.id === item.product_id)?.addons && (initialProducts.find(p => p.id === item.product_id)?.addons?.length || 0) > 0 && (
