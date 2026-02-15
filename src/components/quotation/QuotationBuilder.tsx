@@ -222,9 +222,9 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       name: product.name,
       description: product.description,
       qty: 1,
-      price: product.price,
-      base_price: product.price, // Set base price
-      mrp: product.mrp || product.price, // Set MRP (fallback to price)
+      price: Number(product.price),
+      base_price: Number(product.price), // Set base price
+      mrp: product.mrp ? Number(product.mrp) : Number(product.price), // Set MRP (fallback to price)
       image_url: product.image_url,
       sku: product.sku,
       // Add all addons by default as requested
