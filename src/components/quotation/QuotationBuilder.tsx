@@ -606,8 +606,20 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                       type="number"
                       className="h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all"
                       value={meta.validity_days}
-                      onChange={(e) => setMeta({ ...meta, validity_days: parseInt(e.target.value) || 30 })}
-                      min="1"
+                      onChange={(e) => {
+                        const value = e.target.value
+                        setMeta({ 
+                          ...meta, 
+                          validity_days: value === "" ? 0 : parseInt(value) || 0 
+                        })
+                      }}
+                      onBlur={() => {
+                        // Ensure minimum of 1 day when user leaves the field
+                        if (meta.validity_days < 1) {
+                          setMeta({ ...meta, validity_days: 30 })
+                        }
+                      }}
+                      placeholder="30"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -778,10 +790,20 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                             <TableCell>
                               <Input
                                 type="number"
-                                min="1"
                                 className="mx-auto h-10 w-20 rounded-xl border-gray-100 bg-gray-50/50 text-center font-bold focus:bg-white"
                                 value={item.qty}
-                                onChange={(e) => updateItem(item.id, { qty: parseInt(e.target.value) || 1 })}
+                                onChange={(e) => {
+                                  const value = e.target.value
+                                  updateItem(item.id, { 
+                                    qty: value === "" ? 0 : parseInt(value) || 0
+                                  })
+                                }}
+                                onBlur={() => {
+                                  // Ensure minimum of 1 when user leaves the field
+                                  if (item.qty < 1) {
+                                    updateItem(item.id, { qty: 1 })
+                                  }
+                                }}
                               />
                             </TableCell>
                             <TableCell>
@@ -865,10 +887,20 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                               <Label className="text-[10px] font-bold uppercase text-gray-400">Qty</Label>
                               <Input
                                 type="number"
-                                min="1"
                                 className="h-10 w-full rounded-xl border-gray-100 bg-gray-50/50 text-center font-bold focus:bg-white"
                                 value={item.qty}
-                                onChange={(e) => updateItem(item.id, { qty: parseInt(e.target.value) || 1 })}
+                                onChange={(e) => {
+                                  const value = e.target.value
+                                  updateItem(item.id, { 
+                                    qty: value === "" ? 0 : parseInt(value) || 0
+                                  })
+                                }}
+                                onBlur={() => {
+                                  // Ensure minimum of 1 when user leaves the field
+                                  if (item.qty < 1) {
+                                    updateItem(item.id, { qty: 1 })
+                                  }
+                                }}
                               />
                             </div>
                             <div className="space-y-1">
@@ -955,7 +987,11 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                           type="number"
                           className="h-8 w-28 rounded-lg border-gray-200 bg-white pl-7 pr-2 text-right font-bold text-black"
                           value={discount}
-                          onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            setDiscount(value === "" ? 0 : parseFloat(value) || 0)
+                          }}
+                          placeholder="0"
                         />
                       </div>
                     </div>
