@@ -335,7 +335,7 @@ export default function ProductsPage() {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>SKU</Label>
+                        <Label>SKU(PRODUCT ID)</Label>
                         <Input
                           value={formData.sku}
                           onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
