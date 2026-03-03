@@ -1,6 +1,5 @@
 'use client'
-
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { User, Session } from '@supabase/supabase-js'
 
@@ -28,69 +27,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
-  const supabase = createClient()
+
+  // ✅ Fix 1: useRef so supabase is created ONCE, never triggers re-renders
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
+
+  const fetchProfile = async (userId: string) => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, role, active, phone')
+      .eq('id', userId)
+      .single()
+    return data as Profile | null
+  }
 
   useEffect(() => {
-    let mounted = true;
+    let mounted = true
 
-    const getSession = async () => {
+    const init = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession()
+        // ✅ Fix 2: getUser() instead of getSession() — validates with server
+        const { data: { user }, error } = await supabase.auth.getUser()
 
-        if (error) throw error;
+        if (error || !user) {
+          if (mounted) {
+            setUser(null)
+            setSession(null)
+            setProfile(null)
+          }
+          return
+        }
+
+        // Get session separately just for the session object
+        const { data: { session } } = await supabase.auth.getSession()
+        const profileData = await fetchProfile(user.id)
 
         if (mounted) {
+          setUser(user)
           setSession(session)
-          setUser(session?.user ?? null)
-
-          if (session?.user) {
-            const { data: profileData } = await supabase
-              .from('profiles')
-              .select('id, full_name, email, role, active, phone')
-              .eq('id', session.user.id)
-              .single()
-
-            if (mounted && profileData) {
-              setProfile(profileData as Profile)
-            }
-          }
+          setProfile(profileData)
         }
-      } catch (error) {
-        console.error('Auth initialization error:', error)
+      } catch (err) {
+        console.error('Auth init error:', err)
       } finally {
         if (mounted) setLoading(false)
       }
     }
 
-    getSession()
+    init()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: string, session: Session | null) => {
-      if (mounted) {
+    // ✅ Fix 3: onAuthStateChange handles all subsequent auth events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (!mounted) return
+
         setSession(session)
         setUser(session?.user ?? null)
 
         if (session?.user) {
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('id, full_name, email, role, active, phone')
-            .eq('id', session.user.id)
-            .single()
-
-          if (mounted && profileData) {
-            setProfile(profileData as Profile)
-          }
+          const profileData = await fetchProfile(session.user.id)
+          if (mounted) setProfile(profileData)
         } else {
           setProfile(null)
         }
+
         setLoading(false)
       }
-    })
+    )
 
     return () => {
-      mounted = false;
+      mounted = false
       subscription.unsubscribe()
     }
-  }, [supabase])
+  }, []) // ✅ Fix 4: empty deps — runs once on mount only
 
   const signOut = async () => {
     await supabase.auth.signOut()
