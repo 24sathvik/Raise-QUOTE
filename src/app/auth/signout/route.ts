@@ -5,26 +5,18 @@ import { type NextRequest, NextResponse } from 'next/server'
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
 
-  // Check if a user's logged in
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
 
   if (user) {
+    // ✅ Let Supabase handle cookie clearing — no hardcoded names
     await supabase.auth.signOut()
   }
 
-  const response = NextResponse.redirect(new URL('/auth/login', req.url), {
+  revalidatePath('/', 'layout')
+
+  return NextResponse.redirect(new URL('/auth/login', req.url), {
     status: 302,
   })
-
-  // Ensure all cookies are cleared
-  response.cookies.delete('sb-qbbzmusbktszfyycgcbw-auth-token')
-  response.cookies.delete('sb-access-token')
-  response.cookies.delete('sb-refresh-token')
-
-  revalidatePath('/', 'layout')
-  return response
 }
 
 export async function POST(req: NextRequest) {
