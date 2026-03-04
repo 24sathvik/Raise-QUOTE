@@ -1,23 +1,44 @@
 'use client'
 
 import { useState } from 'react'
-import { loginAction } from './actions'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { ArrowRight, Loader2, Lock, Mail } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 export default function LoginPage() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const router = useRouter()
 
-  const handleLogin = async (formData: FormData) => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
     setLoading(true)
-    const result = await loginAction(formData)
-    if (result?.error) {
-      toast.error(result.error)
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data.error || 'Login failed')
+        return
+      }
+
+      toast.success('Signed in successfully')
+      router.push('/')
+      router.refresh()
+    } catch (err) {
+      toast.error('Something went wrong')
+    } finally {
       setLoading(false)
     }
-    // no need to redirect — server action handles it
   }
 
   return (
@@ -31,7 +52,7 @@ export default function LoginPage() {
           <p className="text-muted-foreground">Sign in to your Raise Labs account</p>
         </div>
 
-        <form action={handleLogin} className="space-y-6">
+        <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-4">
             <div className="space-y-2">
               <Label className="text-sm font-semibold text-gray-700">Email Address</Label>
@@ -39,9 +60,10 @@ export default function LoginPage() {
                 <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <Input
                   type="email"
-                  name="email"
                   placeholder="name@company.com"
                   className="h-12 border-gray-100 bg-gray-50/30 pl-10 focus:border-black focus:ring-0"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                 />
               </div>
@@ -52,9 +74,10 @@ export default function LoginPage() {
                 <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <Input
                   type="password"
-                  name="password"
                   placeholder="••••••••"
                   className="h-12 border-gray-100 bg-gray-50/30 pl-10 focus:border-black focus:ring-0"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   required
                 />
               </div>
