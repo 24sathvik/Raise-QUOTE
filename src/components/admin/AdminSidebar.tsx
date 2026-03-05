@@ -1,18 +1,14 @@
 "use client"
-
 import * as React from "react"
 import {
   Users,
   Package,
-  Settings,
   FileText,
   LayoutDashboard,
   LogOut,
-  ChevronRight,
 } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-
+import { usePathname, useRouter } from "next/navigation"
 import {
   Sidebar,
   SidebarContent,
@@ -26,32 +22,11 @@ import {
 import { cn } from "@/lib/utils"
 
 const items = [
-  {
-    title: "Dashboard",
-    url: "/admin",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "Quotations",
-    url: "/admin/quotations",
-    icon: FileText,
-  },
-  {
-    title: "Products",
-    url: "/admin/products",
-    icon: Package,
-  },
-  {
-    title: "Categories",
-    url: "/admin/categories",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "Users",
-    url: "/admin/users",
-    icon: Users,
-  },
-  
+  { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
+  { title: "Quotations", url: "/admin/quotations", icon: FileText },
+  { title: "Products", url: "/admin/products", icon: Package },
+  { title: "Categories", url: "/admin/categories", icon: LayoutDashboard },
+  { title: "Users", url: "/admin/users", icon: Users },
 ]
 
 export function AdminSidebar() {
@@ -70,6 +45,7 @@ export function AdminSidebar() {
           </div>
         </div>
       </SidebarHeader>
+
       <SidebarContent>
         <SidebarMenu className="px-2">
           {items.map((item) => (
@@ -92,21 +68,26 @@ export function AdminSidebar() {
           ))}
         </SidebarMenu>
       </SidebarContent>
+
       <SidebarFooter className="p-4">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className="h-10 px-3 transition-colors hover:bg-red-50 hover:text-red-600"
-            >
-              <Link href="/auth/signout">
-                <LogOut className="h-4 w-4" />
-                <span className="font-medium">Sign Out</span>
-              </Link>
-            </SidebarMenuButton>
+            {/* ✅ form POST prevents Next.js prefetching from triggering signout */}
+            <form action="/auth/signout" method="POST">
+              <SidebarMenuButton
+                asChild
+                className="h-10 px-3 transition-colors hover:bg-red-50 hover:text-red-600"
+              >
+                <button type="submit" className="w-full">
+                  <LogOut className="h-4 w-4" />
+                  <span className="font-medium">Sign Out</span>
+                </button>
+              </SidebarMenuButton>
+            </form>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+
       <SidebarRail />
     </Sidebar>
   )
