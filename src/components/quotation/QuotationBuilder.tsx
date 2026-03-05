@@ -136,10 +136,10 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   const [saving, setSaving] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [terms, setTerms] = useState<Term[]>(
-    DEFAULT_TERMS.map((t, i) => ({ 
-      id: `term-${i}`, 
-      text: t, 
-      selected: t.startsWith('WARRANTY_2') || t.startsWith('WARRANTY_3') ? false : true 
+    DEFAULT_TERMS.map((t, i) => ({
+      id: `term-${i}`,
+      text: t,
+      selected: t.startsWith('WARRANTY_2') || t.startsWith('WARRANTY_3') ? false : true
     }))
   )
   const [currency, setCurrency] = useState<Currency>('INR')
@@ -182,26 +182,30 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     if (draft) {
       try {
         const parsed = JSON.parse(draft)
-        setItems(parsed.items || [])
+        setItems((parsed.items || []).map((item: any) => ({
+          ...item,
+          mrp: item.mrp ?? item.price,
+          base_price: item.base_price ?? (item.price / (1 + MARGIN_PERCENTAGE / 100))
+        })))
         setCustomer(parsed.customer || { name: "", phone: "", email: "", address: "" })
         if (parsed.meta?.date) {
           setMeta(prev => ({ ...prev, date: parsed.meta.date, validity_days: parsed.meta.validity_days || 30 }))
         }
         setDiscount(parsed.discount || 0)
-        
+
         // ✅ Migrate old warranty format to new format
         if (parsed.terms) {
-          const hasOldWarrantyFormat = parsed.terms.some((t: Term) => 
+          const hasOldWarrantyFormat = parsed.terms.some((t: Term) =>
             t.text === "WARRANTY: One year warranty from the date of dispatch"
           )
-          
+
           if (hasOldWarrantyFormat) {
             // Old format detected - use new default terms instead
             console.log("Migrating old warranty format to new multi-option format")
-            setTerms(DEFAULT_TERMS.map((t, i) => ({ 
-              id: `term-${i}`, 
-              text: t, 
-              selected: t.startsWith('WARRANTY_2') || t.startsWith('WARRANTY_3') ? false : true 
+            setTerms(DEFAULT_TERMS.map((t, i) => ({
+              id: `term-${i}`,
+              text: t,
+              selected: t.startsWith('WARRANTY_2') || t.startsWith('WARRANTY_3') ? false : true
             })))
           } else {
             // New format - load as is
@@ -241,7 +245,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   const addItem = useCallback((product: Product) => {
     const basePrice = product.price  // Base price from DB
     const mrp = basePrice * (1 + MARGIN_PERCENTAGE / 100)  // Calculate MRP with 30% margin
-    
+
     const newItem: QuotationItem = {
       id: Math.random().toString(36).slice(2),
       product_id: product.id,
@@ -265,7 +269,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
 
   // ✅ FIXED: Clean updateItem - no inline validation
   const updateItem = useCallback((id: string, updates: Partial<QuotationItem>) => {
-    setItems(items => items.map((item) => 
+    setItems(items => items.map((item) =>
       item.id === id ? { ...item, ...updates } : item
     ))
   }, [])
@@ -291,10 +295,10 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   const toggleTerm = useCallback((termId: string) => {
     setTerms(terms => {
       const clickedTerm = terms.find(t => t.id === termId)
-      
+
       // Check if the clicked term is a warranty option
       const isWarrantyTerm = clickedTerm?.text.startsWith('WARRANTY_')
-      
+
       if (isWarrantyTerm) {
         // If it's a warranty term, deselect all other warranty terms and select this one
         return terms.map(t => {
@@ -338,10 +342,10 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     }
     triggerRefetch()
     setDiscount(0)
-    setTerms(DEFAULT_TERMS.map((t, i) => ({ 
-      id: `term-${i}`, 
-      text: t, 
-      selected: t.startsWith('WARRANTY_2') || t.startsWith('WARRANTY_3') ? false : true 
+    setTerms(DEFAULT_TERMS.map((t, i) => ({
+      id: `term-${i}`,
+      text: t,
+      selected: t.startsWith('WARRANTY_2') || t.startsWith('WARRANTY_3') ? false : true
     })))
     localStorage.removeItem("quotation_draft")
   }
@@ -608,9 +612,9 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                       value={meta.validity_days}
                       onChange={(e) => {
                         const value = e.target.value
-                        setMeta({ 
-                          ...meta, 
-                          validity_days: value === "" ? 0 : parseInt(value) || 0 
+                        setMeta({
+                          ...meta,
+                          validity_days: value === "" ? 0 : parseInt(value) || 0
                         })
                       }}
                       onBlur={() => {
@@ -794,7 +798,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                 value={item.qty}
                                 onChange={(e) => {
                                   const value = e.target.value
-                                  updateItem(item.id, { 
+                                  updateItem(item.id, {
                                     qty: value === "" ? 0 : parseInt(value) || 0
                                   })
                                 }}
@@ -818,8 +822,8 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                     value={item.price}
                                     onChange={(e) => {
                                       const value = e.target.value
-                                      updateItem(item.id, { 
-                                        price: value === "" ? 0 : Number(value) 
+                                      updateItem(item.id, {
+                                        price: value === "" ? 0 : Number(value)
                                       })
                                     }}
                                     onBlur={() => {
@@ -833,7 +837,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                 {/* Only show MRP reference */}
                                 <div className="text-right text-[9px] font-bold">
                                   <span className="text-green-600">
-                                    Suggested: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
+                                    Suggested: {currency === 'INR' ? '₹' : '$'}{(item.mrp ?? item.price).toLocaleString()}
                                   </span>
                                 </div>
                               </div>
@@ -891,7 +895,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                 value={item.qty}
                                 onChange={(e) => {
                                   const value = e.target.value
-                                  updateItem(item.id, { 
+                                  updateItem(item.id, {
                                     qty: value === "" ? 0 : parseInt(value) || 0
                                   })
                                 }}
@@ -915,8 +919,8 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                   value={item.price}
                                   onChange={(e) => {
                                     const value = e.target.value
-                                    updateItem(item.id, { 
-                                      price: value === "" ? 0 : Number(value) 
+                                    updateItem(item.id, {
+                                      price: value === "" ? 0 : Number(value)
                                     })
                                   }}
                                   onBlur={() => {
@@ -933,7 +937,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                           {/* Price Reference Mobile - Only show MRP */}
                           <div className="flex justify-end text-[9px] font-bold pt-2 border-t border-gray-50">
                             <span className="text-green-600">
-                              Suggested MRP: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
+                              Suggested MRP: {currency === 'INR' ? '₹' : '$'}{(item.mrp ?? item.price).toLocaleString()}
                             </span>
                           </div>
 
@@ -1015,7 +1019,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                   {terms.map((term) => {
                     const isWarrantyTerm = term.text.startsWith('WARRANTY_')
                     const displayText = term.text.replace(/^WARRANTY_\d+:\s*/, 'WARRANTY: ')
-                    
+
                     return (
                       <div key={term.id}>
                         {/* Add a warranty group header before the first warranty option */}
@@ -1026,11 +1030,10 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                             </p>
                           </div>
                         )}
-                        
+
                         <div
-                          className={`flex items-start space-x-3 p-3 rounded-xl hover:bg-gray-50/50 transition-colors group cursor-pointer ${
-                            isWarrantyTerm ? 'ml-4 border-l-2 border-green-500/20' : ''
-                          }`}
+                          className={`flex items-start space-x-3 p-3 rounded-xl hover:bg-gray-50/50 transition-colors group cursor-pointer ${isWarrantyTerm ? 'ml-4 border-l-2 border-green-500/20' : ''
+                            }`}
                           onClick={() => toggleTerm(term.id)}
                         >
                           <Checkbox
@@ -1041,9 +1044,8 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                           />
                           <Label
                             htmlFor={term.id}
-                            className={`text-sm font-medium leading-relaxed group-hover:text-black transition-colors cursor-pointer ${
-                              isWarrantyTerm ? 'text-gray-700' : 'text-gray-600'
-                            }`}
+                            className={`text-sm font-medium leading-relaxed group-hover:text-black transition-colors cursor-pointer ${isWarrantyTerm ? 'text-gray-700' : 'text-gray-600'
+                              }`}
                           >
                             {displayText}
                           </Label>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
+import { loginAction } from './actions'
 import { toast } from 'sonner'
 import { ArrowRight, Loader2, Lock, Mail } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -19,10 +19,13 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      const formData = new FormData()
+      formData.append('email', email)
+      formData.append('password', password)
+      const result = await loginAction(formData)
 
-      if (error) {
-        toast.error(error.message)
+      if (result?.error) {
+        toast.error(result.error)
         return
       }
 
