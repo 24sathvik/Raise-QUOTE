@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { ArrowRight, Loader2, Lock, Mail } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -18,16 +19,10 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
 
-      const data = await res.json()
-
-      if (!res.ok) {
-        toast.error(data.error || 'Login failed')
+      if (error) {
+        toast.error(error.message)
         return
       }
 
