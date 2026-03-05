@@ -1,6 +1,6 @@
 'use client'
-import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { supabase } from '@/lib/supabase/client'
 import { User, Session } from '@supabase/supabase-js'
 
 interface Profile {
@@ -28,10 +28,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // ✅ Fix 1: useRef so supabase is created ONCE, never triggers re-renders
-  const supabaseRef = useRef(createClient())
-  const supabase = supabaseRef.current
-
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
       .from('profiles')
@@ -46,7 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const init = async () => {
       try {
-        // ✅ Fix 2: getUser() instead of getSession() — validates with server
         const { data: { user }, error } = await supabase.auth.getUser()
 
         if (error || !user) {
@@ -58,7 +53,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        // Get session separately just for the session object
         const { data: { session } } = await supabase.auth.getSession()
         const profileData = await fetchProfile(user.id)
 
@@ -76,7 +70,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     init()
 
-    // ✅ Fix 3: onAuthStateChange handles all subsequent auth events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         if (!mounted) return
@@ -99,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false
       subscription.unsubscribe()
     }
-  }, []) // ✅ Fix 4: empty deps — runs once on mount only
+  }, [])
 
   const signOut = async () => {
     await supabase.auth.signOut()
