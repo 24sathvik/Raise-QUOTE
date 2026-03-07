@@ -96,8 +96,13 @@ export default function ProductsPage() {
   const supabase = createClient()
 
   useEffect(() => {
+  const init = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
     fetchData()
-  }, [])
+  }
+  init()
+}, [])
 
   const fetchData = async () => {
     setLoading(true)
