@@ -484,9 +484,11 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                 <p className="truncate text-xs font-bold text-black">{user?.full_name || 'Admin'}</p>
                 <p className="truncate text-[10px] font-medium text-gray-400 uppercase tracking-wider">Professional</p>
               </div>
-              <Link href="/auth/signout" className="text-gray-400 hover:text-red-500 transition-colors">
-                <LogOut className="h-4 w-4" />
-              </Link>
+              <form action="/auth/signout" method="POST">
+  <button type="submit" className="text-gray-400 hover:text-red-500 transition-colors">
+    <LogOut className="h-4 w-4" />
+  </button>
+</form>
             </div>
           </div>
         </div>
