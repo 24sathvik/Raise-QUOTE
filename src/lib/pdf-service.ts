@@ -22,12 +22,13 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
   const margin = 15
-  // Use text 'Rs.' instead of symbol if fonts are an issue, or ensure correct encoding.
-  // The user reported "1" appearing, which is a common encoding issue with basic fonts in jsPDF.
-  // Switching to 'Rs.' is the safest bet for immediate fix without loading custom fonts.
+  const footerHeight = 20 // Space reserved for footer
+  const contentBottomLimit = pageHeight - footerHeight - 5
+
   const currencySymbol = currency === 'INR' ? 'Rs.' : '$'
   const currencyLabel = currency === 'INR' ? 'INR' : 'USD'
 
+  // Helper to draw border (used on every new page)
   const drawPageBorder = () => {
     // Outer Blue Border
     doc.setDrawColor(0, 82, 156)
@@ -49,13 +50,14 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     doc.text("Write us: info@raiselabequip.com / sales@raiselabequip.com | Contact: +91 91777 70365", pageWidth / 2, pageHeight - 14.5, { align: "center" })
   }
 
+  // Helper to draw header (used on every new page)
   const drawHeader = (logoBase64: string) => {
-    // Logo on top-left with increased dimensions for better fill
+    // Logo on top-left
     if (logoBase64) {
       doc.addImage(logoBase64, "JPEG", margin, 12, 70, 25)
     }
 
-    // Address on top-right - Formatted to fill space better
+    // Address on top-right
     doc.setFont("helvetica", "bold")
     doc.setFontSize(11)
     doc.setTextColor(0, 82, 156) // Raise Blue
@@ -75,7 +77,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     doc.line(margin, 43, pageWidth - margin, 43)
   }
 
-  // Pre-load quotation logo (use JPG)
+  // Pre-load quotation logo
   let logoBase64 = ""
   try {
     logoBase64 = await getBase64ImageFromURL('/quotation-logo.jpg')
@@ -83,14 +85,14 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     console.warn("Could not load quotation logo", e)
   }
 
-  // Pre-load item images in parallel with optimized caching
+  // Pre-load item images
   const itemImages: Record<string, { base64: string; isWide: boolean; width: number; height: number }> = {}
   const imagePromises = items
     .filter(item => item.image_url)
     .map(async (item) => {
       try {
         const { base64, width, height } = await getBase64ImageWithDimensions(item.image_url!)
-        const isWide = width > height * 1.3 // Consider wide if aspect ratio > 1.3
+        const isWide = width > height * 1.3
         itemImages[item.id] = { base64, isWide, width, height }
       } catch (e) {
         console.warn(`Could not load item image for ${item.id}`, e)
@@ -99,53 +101,76 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
   await Promise.all(imagePromises)
 
-  // Calculate total pages
-  const totalPages = items.length + 1
-
-  const drawPageNumber = (pageNum: number) => {
-    doc.setFont("helvetica", "normal")
-    doc.setFontSize(8)
-    doc.setTextColor(0)
-    doc.text(`Page ${pageNum} of ${totalPages}`, pageWidth - margin, pageHeight - 8, { align: "right" })
-  }
-
-  // Start Drawing
-  let pageNumber = 1
+  // -- Start Generating Pages --
   drawPageBorder()
   drawHeader(logoBase64)
-  drawPageNumber(pageNumber)
 
   let currentY = 50
   let isFirstPage = true
 
+  // Helper function to check if we need a new page
+  const checkAddPage = (neededHeight: number) => {
+    if (currentY + neededHeight > contentBottomLimit) {
+      doc.addPage()
+      drawPageBorder()
+      drawHeader(logoBase64)
+      currentY = 50 // Reset Y position for new page
+      return true
+    }
+    return false
+  }
+
+  // Helper: estimate total height of the features + image block (wide format)
+  const estimateWideBlockHeight = (imageData: { base64: string; width: number; height: number } | undefined, features: string[]): number => {
+    let height = 0
+    if (imageData?.base64) {
+      const maxWidth = pageWidth - (margin * 2) - 10
+      const maxHeight = 80
+      const ratio = Math.min(maxWidth / imageData.width, maxHeight / imageData.height)
+      height += imageData.height * ratio + 10
+    }
+    height += 16 // "FEATURES:" header + spacing
+    doc.setFontSize(9)
+    features.forEach((f: string) => {
+      const splitFeature = doc.splitTextToSize(f, pageWidth - (margin * 2) - 10)
+      height += splitFeature.length * 4.5 + 2
+    })
+    height += 5 // trailing space
+    return height
+  }
+
+  // Helper: estimate commercial table height
+  const estimateCommercialTableHeight = (descContent: string, addons: any[]): number => {
+    const descColWidth = pageWidth - (margin * 2) - 15 - 15 - 50 // minus s.no, qty, price cols
+    doc.setFontSize(10)
+    const descLines = doc.splitTextToSize(descContent, descColWidth).length
+    const rowHeight = Math.max(descLines * 5 + 8, 15)
+    return 10 + rowHeight + 20 // header + row + padding buffer
+  }
+
   items.forEach((item, index) => {
     if (index > 0) {
       doc.addPage()
-      pageNumber++
       drawPageBorder()
       drawHeader(logoBase64)
-      drawPageNumber(pageNumber)
       currentY = 50
     }
 
-    // "To" block - ONLY on first page, FIRST thing after header
+    // "To" block - ONLY on first page
     if (isFirstPage) {
-      // Prioritize passed validityDate, then DB field, then default
       const validityDate = validityData?.validityDate
         ? new Date(validityData.validityDate)
         : (quotation.validity_date
           ? new Date(quotation.validity_date)
           : new Date(quotation.created_at || Date.now()));
 
-      // If no valid date found, default to 30 days
       if (isNaN(validityDate.getTime())) {
         const d = new Date(quotation.created_at || Date.now())
         d.setDate(d.getDate() + 30)
         validityDate.setTime(d.getTime())
       }
 
-      const toAddress = `To\n\n${quotation.customer_name}${quotation.customer_address ? '\n' + quotation.customer_address : ''}`;
-
+      const toAddress = `To\n${quotation.customer_name}${quotation.customer_address ? '\n' + quotation.customer_address : ''}`;
       const quoteNo = quotation.quotation_number;
       const dateStr = new Date(quotation.created_at || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
       const validStr = validityDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
@@ -181,6 +206,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     }
 
     // Technical & Commercial Offer Title
+    checkAddPage(20)
     doc.setFont("helvetica", "bold")
     doc.setFontSize(14)
     doc.setTextColor(0, 82, 156)
@@ -192,6 +218,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     currentY += 12
 
     // Description section
+    checkAddPage(20)
     doc.setFont("helvetica", "bold")
     doc.setFontSize(10)
     doc.text("Description:", margin, currentY)
@@ -199,13 +226,18 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     doc.setFont("helvetica", "normal")
     doc.setFontSize(9)
     const splitDesc = doc.splitTextToSize(item.description || "", pageWidth - (margin * 2))
+    
+    if (currentY + (splitDesc.length * 5) > contentBottomLimit) {
+         doc.addPage();
+         drawPageBorder();
+         drawHeader(logoBase64);
+         currentY = 50;
+    }
     doc.text(splitDesc, margin, currentY)
-    currentY += (splitDesc.length * 5) + 5
+    currentY += (splitDesc.length * 4.5) + 5
 
     const imageData = itemImages[item.id]
-
-    // Get features and image format option from item
-    const imageFormat = item.image_format || 'wide' // 'wide' or 'tall'
+    const imageFormat = item.image_format || 'wide'
     const features = item.features && item.features.length > 0 ? item.features : [
       "Accurate method for determining the strength of antibiotic material",
       "Microprocessor based design",
@@ -220,24 +252,32 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       "IQ/OQ Documentation"
     ]
 
-    // Image layout based on admin selection
+    // --- FORMAT 1: WIDE (Image BELOW Description, Then Features) ---
     if (imageFormat === 'wide') {
-      // WIDE FORMAT: Image below description, then features
-      if (imageData.base64) {
-        // Ensure image fits within page width
+
+      // FIX: Estimate the total height of image + features block and check ONCE
+      // so they don't get split across pages unexpectedly.
+      const wideBlockHeight = estimateWideBlockHeight(imageData, features)
+      // Only jump to a new page if the block fits on a fresh page (avoid infinite loop for huge blocks)
+      if (wideBlockHeight <= contentBottomLimit - 50) {
+        checkAddPage(wideBlockHeight)
+      }
+
+      // 1. Draw Image
+      if (imageData?.base64) {
         const maxWidth = pageWidth - (margin * 2) - 10
         const maxHeight = 80
-
         const ratio = Math.min(maxWidth / imageData.width, maxHeight / imageData.height)
         const newWidth = imageData.width * ratio
         const newHeight = imageData.height * ratio
-
+        
+        // No individual checkAddPage here — already handled above
         const x = (pageWidth - newWidth) / 2
         doc.addImage(imageData.base64, "PNG", x, currentY, newWidth, newHeight)
         currentY += newHeight + 10
       }
 
-      // Features list below image
+      // 2. Draw Features List
       doc.setFont("helvetica", "bold")
       doc.setFontSize(10)
       doc.text("FEATURES:", margin, currentY)
@@ -246,57 +286,71 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       doc.setFont("helvetica", "normal")
       doc.setFontSize(9)
       features.forEach((f: string) => {
-        doc.text("•", margin + 3, currentY)
         const splitFeature = doc.splitTextToSize(f, pageWidth - (margin * 2) - 10)
+        const featureHeight = splitFeature.length * 4.5
+        
+        checkAddPage(featureHeight + 2)
+        
+        doc.text("•", margin + 3, currentY)
         doc.text(splitFeature, margin + 8, currentY)
-        currentY += splitFeature.length * 4.5
+        currentY += featureHeight
       })
       currentY += 5
-    } else {
-      // TALL FORMAT: Features on left, Image on right
+    } 
+    
+    // --- FORMAT 2: TALL (Features Left, Image Right) ---
+    else {
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(10)
+      
+      const featureWidth = (pageWidth - (margin * 2)) * 0.50 
+      let estimatedFeatureHeight = 6;
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(9)
+      features.forEach((f: string) => {
+          const split = doc.splitTextToSize(f, featureWidth);
+          estimatedFeatureHeight += split.length * 4.5;
+      });
+      
+      const maxImgHeight = 80;
+
       doc.setFont("helvetica", "bold")
       doc.setFontSize(10)
       doc.text("FEATURES:", margin, currentY)
       currentY += 6
-
+      
       const featureStartY = currentY
+      
       doc.setFont("helvetica", "normal")
       doc.setFontSize(9)
-
-      // Calculate widths: Features get 55%, Image gets 40% approx
-      const featureWidth = (pageWidth - (margin * 2)) * 0.55
-      const imgWidth = (pageWidth - (margin * 2)) * 0.40
-
       features.forEach((f: string) => {
         doc.text("•", margin + 3, currentY)
         const splitFeature = doc.splitTextToSize(f, featureWidth)
         doc.text(splitFeature, margin + 8, currentY)
         currentY += splitFeature.length * 4.5
       })
+      
+      const featuresEndY = currentY;
 
-      // Tall image on the right
+      let imageEndY = featureStartY;
       if (imageData?.base64) {
         const maxImgWidth = (pageWidth - (margin * 2)) * 0.40
-        const maxImgHeight = 80
-
         const ratio = Math.min(maxImgWidth / imageData.width, maxImgHeight / imageData.height)
         const newWidth = imageData.width * ratio
         const newHeight = imageData.height * ratio
 
-        const imgX = margin + featureWidth + 5 + (maxImgWidth - newWidth) / 2
-
+        const imgX = pageWidth - margin - newWidth
+        
         doc.addImage(imageData.base64, "JPEG", imgX, featureStartY, newWidth, newHeight)
-
-        // Ensure new Y is below the taller of the two (features or image)
-        const imageEndY = featureStartY + newHeight + 10
-        currentY = imageEndY // Strict Fix: Ensure content starts below image
-      } else {
-        currentY += 5
+        imageEndY = featureStartY + newHeight + 10
       }
+      
+      currentY = Math.max(featuresEndY, imageEndY) + 5
     }
 
-    // Specification
+    // Specification Section
     if (item.specs && item.specs.length > 0) {
+      checkAddPage(20)
       doc.setFont("helvetica", "bold")
       doc.setFontSize(10)
       doc.text("Specifications:", margin, currentY)
@@ -305,6 +359,8 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       doc.setFontSize(9)
 
       item.specs.forEach((s: { key: string; value: string }) => {
+        checkAddPage(6)
+        
         doc.text("•", margin + 3, currentY)
         doc.setFont("helvetica", "bold")
         doc.text(s.key, margin + 8, currentY)
@@ -315,26 +371,11 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       currentY += 5
     }
 
-    // Check if we need a new page for commercial offer
-    if (currentY > pageHeight - 60) {
-      doc.addPage()
-      drawPageBorder()
-      drawHeader(logoBase64)
-      currentY = 50
-    }
-
-    // Commercial Offer
-    doc.setFont("helvetica", "bold")
-    doc.setFontSize(11)
-    doc.text("Commercial Offer:", margin, currentY)
-    currentY += 6
-
-    const tableRows = []
-
-    // Calculate total price including add-ons
+    // Commercial Offer Table
+    // FIX: Estimate table height properly and move to new page if it won't fit,
+    // so the table never gets split and never overlaps the footer.
     const unitPrice = item.price + (item.selectedAddons?.reduce((s: number, a: any) => s + a.price, 0) || 0)
 
-    // Description Cell Content
     let descContent = item.name
     if (item.selectedAddons && item.selectedAddons.length > 0) {
       descContent += "\n\nStandard Accessories:"
@@ -343,17 +384,33 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       })
     }
 
-    tableRows.push([
-      { content: "01", styles: { halign: "center", valign: "middle", fontSize: 10 } },
-      { content: descContent, styles: { halign: "left", valign: "middle", fontSize: 10, cellPadding: 4 } },
-      { content: "1", styles: { halign: "center", valign: "middle", fontSize: 10 } },
-      { content: `${currencySymbol} ${unitPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}/-`, styles: { halign: "center", fontStyle: "bold", valign: "middle", fontSize: 11, cellPadding: 4 } }
-    ])
+    // Estimate the table row height based on description content lines
+    const descColWidth = pageWidth - (margin * 2) - 15 - 15 - 50
+    doc.setFontSize(10)
+    const descLineCount = doc.splitTextToSize(descContent, descColWidth).length
+    const estimatedRowHeight = Math.max(descLineCount * 5 + 8, 15)
+    const estimatedTableHeight = 14 + estimatedRowHeight + 6 // header + row + buffer
+
+    // "Commercial Offer:" label height (11) + table itself
+    const totalCommercialHeight = 17 + estimatedTableHeight
+
+    // Always start commercial offer on a new page if it doesn't fully fit
+    checkAddPage(totalCommercialHeight)
+
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(11)
+    doc.text("Commercial Offer:", margin, currentY)
+    currentY += 6
 
     autoTable(doc, {
       startY: currentY,
       head: [["S.No", "Description", "Qty", `Price (${currencyLabel})`]],
-      body: tableRows,
+      body: [[
+        { content: "01", styles: { halign: "center", valign: "middle", fontSize: 10 } },
+        { content: descContent, styles: { halign: "left", valign: "middle", fontSize: 10, cellPadding: 4 } },
+        { content: "1", styles: { halign: "center", valign: "middle", fontSize: 10 } },
+        { content: `${currencySymbol} ${unitPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}/-`, styles: { halign: "center", fontStyle: "bold", valign: "middle", fontSize: 11, cellPadding: 4 } }
+      ]],
       theme: "grid",
       headStyles: {
         fillColor: [0, 82, 156],
@@ -361,7 +418,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
         lineColor: [0, 0, 0],
         lineWidth: 0.2,
         fontStyle: "bold",
-        halign: "center" as "center", // Explicit cast to fix type error
+        halign: "center" as "center",
         fontSize: 10
       },
       bodyStyles: {
@@ -375,10 +432,10 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
         0: { cellWidth: 15, halign: "center" },
         1: { cellWidth: "auto" },
         2: { cellWidth: 15, halign: "center" },
-        // Increased width for price to prevent overflow
         3: { cellWidth: 50, halign: "center" }
       },
-      margin: { left: margin, right: margin }
+      // FIX: Set bottom margin so autoTable never draws into the footer area
+      margin: { left: margin, right: margin, bottom: footerHeight + 8 }
     })
 
     currentY = (doc as any).lastAutoTable.finalY + 10
@@ -386,19 +443,15 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
   // Terms & Conditions Page
   doc.addPage()
-  pageNumber++
   drawPageBorder()
   drawHeader(logoBase64)
-  drawPageNumber(pageNumber)
-
-  currentY = 55 // Start terms higher up now that HSN is gone
+  currentY = 55
 
   doc.setFont("helvetica", "bold")
   doc.setFontSize(12)
   doc.text("Terms And Conditions:", margin, currentY)
   currentY += 10
 
-  // Default terms without numbering
   const defaultTerms = [
     { title: "Packaging & Forwarding", text: "Extra As Applicable" },
     { title: "Freight", text: "To Pay / Extra as applicable" },
@@ -415,19 +468,20 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
   termsToDisplay.forEach((t) => {
     doc.setFont("helvetica", "normal")
     doc.setFontSize(9)
-
-    // Remove any legacy number prefixes if present in custom terms
     const cleanTitle = t.title.replace(/^\d+\.\s*/, '');
     const fullText = `${cleanTitle}: ${t.text}`
-
-    // Draw bullet point
-    doc.text("•", margin, currentY)
-
+    
     const splitT = doc.splitTextToSize(fullText, pageWidth - (margin * 2) - 5)
+    
+    checkAddPage((splitT.length * 5) + 3)
+
+    doc.text("•", margin, currentY)
     doc.text(splitT, margin + 5, currentY)
     currentY += (splitT.length * 5) + 3
   })
 
+  // Signatures
+  checkAddPage(40)
   currentY += 15
   doc.setFont("helvetica", "bold")
   doc.setFontSize(10)
@@ -443,6 +497,16 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     doc.text("Contact: +91 91777 70365", pageWidth - margin, currentY, { align: "right" })
   }
 
+  // --- Final Pass: Add correct page numbers to ALL pages ---
+  const totalPages = doc.getNumberOfPages()
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i)
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(8)
+    doc.setTextColor(0)
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 8, { align: "right" })
+  }
+
   const pdfName = `${quotation.quotation_number}_Quotation.pdf`
   doc.save(pdfName)
 
@@ -455,17 +519,14 @@ const getBase64ImageFromURL = (url: string): Promise<string> => {
     img.setAttribute("crossOrigin", "anonymous")
     img.onload = () => {
       const canvas = document.createElement("canvas")
-      // Optimize: Reduce image size for PDFs (max width 800px)
       const maxWidth = 800
       const scale = img.width > maxWidth ? maxWidth / img.width : 1
       canvas.width = img.width * scale
       canvas.height = img.height * scale
       const ctx = canvas.getContext("2d")
-      // Don't fill with black - keep transparent background
       if (ctx) {
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
       }
-      // Use JPEG with 85% quality for smaller file size
       const dataURL = canvas.toDataURL("image/jpeg", 0.85)
       resolve(dataURL)
     }
@@ -482,17 +543,14 @@ const getBase64ImageWithDimensions = (url: string): Promise<{ base64: string; wi
     img.setAttribute("crossOrigin", "anonymous")
     img.onload = () => {
       const canvas = document.createElement("canvas")
-      // Optimize: Reduce image size for PDFs (max width 800px)
       const maxWidth = 800
       const scale = img.width > maxWidth ? maxWidth / img.width : 1
       canvas.width = img.width * scale
       canvas.height = img.height * scale
       const ctx = canvas.getContext("2d")
-      // Don't fill with black - keep transparent background
       if (ctx) {
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
       }
-      // Use JPEG with 85% quality for smaller file size
       const dataURL = canvas.toDataURL("image/jpeg", 0.85)
       resolve({ base64: dataURL, width: img.width, height: img.height })
     }
