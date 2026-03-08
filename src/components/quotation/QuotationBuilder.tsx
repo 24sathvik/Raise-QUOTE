@@ -79,9 +79,9 @@ interface QuotationItem {
   name: string
   description: string
   qty: number
-  base_price: number    // Floor price (cannot go below) - HIDDEN FROM UI
-  mrp: number           // Calculated selling price (base + 30%)
-  price: number         // Editable selling price (starts at MRP)
+  base_price: number
+  mrp: number
+  price: number
   image_url: string | null
   sku: string
   selectedAddons?: { name: string; price: number }[]
@@ -107,15 +107,21 @@ type Currency = 'INR' | 'USD'
 const DEFAULT_TERMS = [
   "Taxes: 18% GST extra applicable",
   "Packaging & Forwarding: Extra As Applicable",
-  "Fright: To Pay / Extra as applicable",
+  "Freight: To Pay / Extra as applicable",
   "DELIVERY: We deliver the order in 3-4 Weeks from the date of receipt of purchase order",
   "INSTALLATION: Fees extra as applicable",
   "PAYMENT: 100% payment at the time of proforma invoice prior to dispatch.",
-  "WARRANTY_1: One year warranty from the date of dispatch",
-  "WARRANTY_2: Two years warranty from the date of dispatch",
-  "WARRANTY_3: Three years warranty from the date of dispatch",
+  "WARRANTY: One year warranty from the date of dispatch",
+  "WARRANTY: Two years warranty from the date of dispatch",
+  "WARRANTY: Three years warranty from the date of dispatch",
   "GOVERNING LAW: These Terms and Conditions and any action related hereto shall be governed, controlled, interpreted and defined by and under the laws of the State of Telangana",
   "MODIFICATION: Any modification of these Terms and Conditions shall be valid only if it is in writing and signed by the authorized representatives of both Supplier and Customer."
+]
+
+const WARRANTY_TERMS = [
+  "WARRANTY: One year warranty from the date of dispatch",
+  "WARRANTY: Two years warranty from the date of dispatch",
+  "WARRANTY: Three years warranty from the date of dispatch",
 ]
 
 export default function QuotationBuilder({ initialProducts, settings, user }: QuotationBuilderProps) {
@@ -139,7 +145,10 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     DEFAULT_TERMS.map((t, i) => ({
       id: `term-${i}`,
       text: t,
-      selected: t.startsWith('WARRANTY_2') || t.startsWith('WARRANTY_3') ? false : true
+      // Only first warranty selected by default, others deselected
+      selected: WARRANTY_TERMS.includes(t)
+        ? t === "WARRANTY: One year warranty from the date of dispatch"
+        : true
     }))
   )
   const [currency, setCurrency] = useState<Currency>('INR')
@@ -182,35 +191,15 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     if (draft) {
       try {
         const parsed = JSON.parse(draft)
-        setItems((parsed.items || []).map((item: any) => ({
-          ...item,
-          mrp: item.mrp ?? item.price,
-          base_price: item.base_price ?? (item.price / (1 + MARGIN_PERCENTAGE / 100))
-        })))
+        setItems(parsed.items || [])
         setCustomer(parsed.customer || { name: "", phone: "", email: "", address: "" })
         if (parsed.meta?.date) {
           setMeta(prev => ({ ...prev, date: parsed.meta.date, validity_days: parsed.meta.validity_days || 30 }))
         }
         setDiscount(parsed.discount || 0)
 
-        // ✅ Migrate old warranty format to new format
         if (parsed.terms) {
-          const hasOldWarrantyFormat = parsed.terms.some((t: Term) =>
-            t.text === "WARRANTY: One year warranty from the date of dispatch"
-          )
-
-          if (hasOldWarrantyFormat) {
-            // Old format detected - use new default terms instead
-            console.log("Migrating old warranty format to new multi-option format")
-            setTerms(DEFAULT_TERMS.map((t, i) => ({
-              id: `term-${i}`,
-              text: t,
-              selected: t.startsWith('WARRANTY_2') || t.startsWith('WARRANTY_3') ? false : true
-            })))
-          } else {
-            // New format - load as is
-            setTerms(parsed.terms)
-          }
+          setTerms(parsed.terms)
         }
       } catch (e) {
         console.error("Failed to load draft", e)
@@ -243,8 +232,8 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   }, [items, discount])
 
   const addItem = useCallback((product: Product) => {
-    const basePrice = product.price  // Base price from DB
-    const mrp = basePrice * (1 + MARGIN_PERCENTAGE / 100)  // Calculate MRP with 30% margin
+    const basePrice = product.price
+    const mrp = basePrice * (1 + MARGIN_PERCENTAGE / 100)
 
     const newItem: QuotationItem = {
       id: Math.random().toString(36).slice(2),
@@ -252,9 +241,9 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       name: product.name,
       description: product.description,
       qty: 1,
-      base_price: basePrice,           // Floor price (hidden from UI)
-      mrp: mrp,                         // Suggested selling price
-      price: mrp,                       // Start at MRP
+      base_price: basePrice,
+      mrp: mrp,
+      price: mrp,
       image_url: product.image_url,
       sku: product.sku,
       selectedAddons: product.addons ? product.addons.map(a => ({ name: a.name, price: a.price })) : [],
@@ -267,7 +256,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     toast.success(`${product.name} added at MRP ${currency === 'INR' ? '₹' : '$'}${mrp.toLocaleString()}`)
   }, [currency])
 
-  // ✅ FIXED: Clean updateItem - no inline validation
   const updateItem = useCallback((id: string, updates: Partial<QuotationItem>) => {
     setItems(items => items.map((item) =>
       item.id === id ? { ...item, ...updates } : item
@@ -296,19 +284,19 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     setTerms(terms => {
       const clickedTerm = terms.find(t => t.id === termId)
 
-      // Check if the clicked term is a warranty option
-      const isWarrantyTerm = clickedTerm?.text.startsWith('WARRANTY_')
+      // Check if clicked term is a warranty option
+      const isWarrantyTerm = WARRANTY_TERMS.includes(clickedTerm?.text || "")
 
       if (isWarrantyTerm) {
-        // If it's a warranty term, deselect all other warranty terms and select this one
+        // Radio behavior: deselect all warranty terms, select only clicked one
         return terms.map(t => {
-          if (t.text.startsWith('WARRANTY_')) {
+          if (WARRANTY_TERMS.includes(t.text)) {
             return { ...t, selected: t.id === termId }
           }
           return t
         })
       } else {
-        // For non-warranty terms, just toggle normally
+        // Normal toggle for non-warranty terms
         return terms.map(t => t.id === termId ? { ...t, selected: !t.selected } : t)
       }
     })
@@ -345,7 +333,9 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     setTerms(DEFAULT_TERMS.map((t, i) => ({
       id: `term-${i}`,
       text: t,
-      selected: t.startsWith('WARRANTY_2') || t.startsWith('WARRANTY_3') ? false : true
+      selected: WARRANTY_TERMS.includes(t)
+        ? t === "WARRANTY: One year warranty from the date of dispatch"
+        : true
     })))
     localStorage.removeItem("quotation_draft")
   }
@@ -618,7 +608,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                         })
                       }}
                       onBlur={() => {
-                        // Ensure minimum of 1 day when user leaves the field
                         if (meta.validity_days < 1) {
                           setMeta({ ...meta, validity_days: 30 })
                         }
@@ -759,12 +748,10 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                     <p className="text-sm font-black text-black uppercase tracking-tight">{item.name}</p>
                                     <p className="text-xs text-gray-400 line-clamp-1">{item.description}</p>
                                   </div>
-
-                                  {/* Addons Selection with Checkboxes */}
                                   {initialProducts.find(p => p.id === item.product_id)?.addons && initialProducts.find(p => p.id === item.product_id)?.addons!.length > 0 && (
                                     <div className="space-y-2">
                                       <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Available Addons</p>
-                                      <div className="flex flex-wrap gap-3">
+                                      <div className="flex flex-col gap-2">
                                         {initialProducts.find(p => p.id === item.product_id)?.addons?.map((addon) => (
                                           <div
                                             key={addon.name}
@@ -803,7 +790,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                   })
                                 }}
                                 onBlur={() => {
-                                  // Ensure minimum of 1 when user leaves the field
                                   if (item.qty < 1) {
                                     updateItem(item.id, { qty: 1 })
                                   }
@@ -834,10 +820,9 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                     }}
                                   />
                                 </div>
-                                {/* Only show MRP reference */}
                                 <div className="text-right text-[9px] font-bold">
                                   <span className="text-green-600">
-                                    Suggested: {currency === 'INR' ? '₹' : '$'}{(item.mrp ?? item.price).toLocaleString()}
+                                    Suggested: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
                                   </span>
                                 </div>
                               </div>
@@ -900,7 +885,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                   })
                                 }}
                                 onBlur={() => {
-                                  // Ensure minimum of 1 when user leaves the field
                                   if (item.qty < 1) {
                                     updateItem(item.id, { qty: 1 })
                                   }
@@ -934,18 +918,16 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                             </div>
                           </div>
 
-                          {/* Price Reference Mobile - Only show MRP */}
                           <div className="flex justify-end text-[9px] font-bold pt-2 border-t border-gray-50">
                             <span className="text-green-600">
-                              Suggested MRP: {currency === 'INR' ? '₹' : '$'}{(item.mrp ?? item.price).toLocaleString()}
+                              Suggested MRP: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
                             </span>
                           </div>
 
-                          {/* Addons Mobile */}
                           {initialProducts.find(p => p.id === item.product_id)?.addons && (initialProducts.find(p => p.id === item.product_id)?.addons?.length || 0) > 0 && (
                             <div className="space-y-2 pt-2 border-t border-gray-50">
                               <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Addons</p>
-                              <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-col gap-2">
                                 {initialProducts.find(p => p.id === item.product_id)?.addons?.map((addon) => (
                                   <div
                                     key={addon.name}
@@ -1017,13 +999,13 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
               <CardContent className="p-6">
                 <div className="space-y-4">
                   {terms.map((term) => {
-                    const isWarrantyTerm = term.text.startsWith('WARRANTY_')
-                    const displayText = term.text.replace(/^WARRANTY_\d+:\s*/, 'WARRANTY: ')
+                    const isWarrantyTerm = WARRANTY_TERMS.includes(term.text)
+                    const displayText = term.text
 
                     return (
                       <div key={term.id}>
-                        {/* Add a warranty group header before the first warranty option */}
-                        {term.text.startsWith('WARRANTY_1') && (
+                        {/* Add warranty group header before the first warranty option */}
+                        {term.text === "WARRANTY: One year warranty from the date of dispatch" && (
                           <div className="mb-2">
                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">
                               Warranty Options (Select One)
@@ -1057,7 +1039,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
               </CardContent>
             </Card>
 
-            {/* Download PDF Button - Bottom */}
+            {/* Download PDF Button */}
             <div className="flex justify-center pt-4">
               <Button
                 disabled={saving}
