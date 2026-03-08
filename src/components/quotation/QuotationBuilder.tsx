@@ -57,7 +57,7 @@ import { generateQuotationPDF } from "@/lib/pdf-service"
 import { createClient } from "@/lib/supabase/client"
 
 // 🔥 MARGIN CONFIGURATION
-const MARGIN_PERCENTAGE = 30 // Sales sees 30% markup over base price
+const MARGIN_PERCENTAGE = 50 // Sales sees 30% markup over base price
 
 interface Product {
   id: string
