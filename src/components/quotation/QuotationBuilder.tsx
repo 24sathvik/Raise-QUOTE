@@ -454,6 +454,14 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
               New Quotation
             </Link>
 
+            <Link
+              href="/quotations"
+              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-black transition-all"
+            >
+              <FileText className="h-5 w-5" />
+              My Quotations
+            </Link>
+
             <div className="my-6 h-px bg-gray-50" />
 
             <Link

@@ -1,9 +1,16 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Calendar, User, Download } from "lucide-react"
+import { Search, Calendar, User, Download, ChevronDown } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Badge } from "@/components/ui/badge"
+import { createClient } from "@/lib/supabase/client"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
+
+export type QuotationStatus = 'pending' | 'negotiating' | 'approved' | 'rejected' | 'on_hold'
 
 interface Quotation {
   id: string
@@ -12,11 +19,32 @@ interface Quotation {
   grand_total: number
   created_at: string
   pdf_url: string | null
+  status: QuotationStatus
   profiles: { full_name: string }
+}
+
+const statusColors: Record<QuotationStatus, string> = {
+  pending: "bg-gray-100 text-gray-800 hover:bg-gray-200 border-gray-200",
+  negotiating: "bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-200",
+  approved: "bg-green-100 text-green-800 hover:bg-green-200 border-green-200",
+  rejected: "bg-red-100 text-red-800 hover:bg-red-200 border-red-200",
+  on_hold: "bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-200",
+}
+
+const statusLabels: Record<QuotationStatus, string> = {
+  pending: "Pending",
+  negotiating: "Negotiating",
+  approved: "Approved",
+  rejected: "Rejected",
+  on_hold: "On Hold",
 }
 
 export default function QuotationsClient({ initialQuotations }: { initialQuotations: Quotation[] }) {
   const [search, setSearch] = useState("")
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
+  
+  const router = useRouter()
+  const supabase = createClient()
 
   const filtered = initialQuotations.filter(
     (q) =>
@@ -24,6 +52,26 @@ export default function QuotationsClient({ initialQuotations }: { initialQuotati
       q.quotation_number?.toLowerCase().includes(search.toLowerCase()) ||
       q.profiles?.full_name?.toLowerCase().includes(search.toLowerCase())
   )
+
+  const handleStatusChange = async (id: string, newStatus: QuotationStatus) => {
+    setUpdatingId(id)
+    try {
+      const { error } = await supabase
+        .from('quotations')
+        .update({ status: newStatus })
+        .eq('id', id)
+
+      if (error) throw error
+      
+      toast.success("Status updated successfully")
+      router.refresh()
+    } catch (error) {
+      console.error(error)
+      toast.error("Failed to update status")
+    } finally {
+      setUpdatingId(null)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -51,6 +99,7 @@ export default function QuotationsClient({ initialQuotations }: { initialQuotati
                 <TableHead className="whitespace-nowrap">Customer</TableHead>
                 <TableHead className="whitespace-nowrap">Salesperson</TableHead>
                 <TableHead className="whitespace-nowrap">Amount</TableHead>
+                <TableHead className="whitespace-nowrap">Status</TableHead>
                 <TableHead className="whitespace-nowrap">Date</TableHead>
                 <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
               </TableRow>
@@ -58,7 +107,7 @@ export default function QuotationsClient({ initialQuotations }: { initialQuotati
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center">No quotations found.</TableCell>
+                  <TableCell colSpan={7} className="h-24 text-center">No quotations found.</TableCell>
                 </TableRow>
               ) : (
                 filtered.map((q) => (
@@ -72,10 +121,32 @@ export default function QuotationsClient({ initialQuotations }: { initialQuotati
                       </div>
                     </TableCell>
                     <TableCell className="font-bold">₹{q.grand_total?.toLocaleString()}</TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger disabled={updatingId === q.id} className="focus:outline-none disabled:opacity-50">
+                          <Badge variant="outline" className={`flex items-center gap-1 cursor-pointer transition-colors ${statusColors[q.status || 'pending']}`}>
+                            {statusLabels[q.status || 'pending']}
+                            <ChevronDown className="h-3 w-3 opacity-50" />
+                          </Badge>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          {(Object.keys(statusLabels) as QuotationStatus[]).map((status) => (
+                            <DropdownMenuItem
+                              key={status}
+                              onClick={() => handleStatusChange(q.id, status)}
+                              className="cursor-pointer font-medium"
+                            >
+                              <div className={`w-2 h-2 rounded-full mr-2 ${status === 'pending' ? 'bg-gray-500' : status === 'negotiating' ? 'bg-blue-500' : status === 'approved' ? 'bg-green-500' : status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                              {statusLabels[status]}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       <div className="flex items-center gap-2">
                         <Calendar className="h-3 w-3" />
-                        <span className="text-xs">{new Date(q.created_at).toLocaleDateString()}</span>
+                        <span suppressHydrationWarning className="text-xs">{new Date(q.created_at).toLocaleDateString()}</span>
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
