@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import { startOfMonth, subMonths, format, endOfMonth, isWithinInterval } from "date-fns"
 import { FileText, CheckCircle, Clock, XCircle, DollarSign, Percent } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 export type QuotationStatus = 'pending' | 'negotiating' | 'approved' | 'rejected' | 'on_hold'
 
@@ -28,6 +29,7 @@ const COLORS = {
 }
 
 export default function AdminAnalyticsClient({ quotations }: { quotations: Quotation[] }) {
+  const router = useRouter()
   // Generate last 12 months for selector
   const monthsList = useMemo(() => {
     const list = []
@@ -60,13 +62,16 @@ export default function AdminAnalyticsClient({ quotations }: { quotations: Quota
   const totalRevenue = approvedQuotes.reduce((sum, q) => sum + (q.grand_total || 0), 0)
   const conversionRate = totalQuotations > 0 ? (approvedQuotes.length / totalQuotations) * 100 : 0
 
+  const qsMonth = selectedMonth.getMonth() + 1
+  const qsYear = selectedMonth.getFullYear()
+
   const kpiStats = [
-    { title: "Total Quotations", value: totalQuotations, icon: FileText, color: "text-blue-500", bg: "bg-blue-50" },
-    { title: "Approved Quotations", value: approvedQuotes.length, icon: CheckCircle, color: "text-green-500", bg: "bg-green-50" },
-    { title: "Pending / Negotiating", value: pendingNegotiatingQuotes.length, icon: Clock, color: "text-amber-500", bg: "bg-amber-50" },
-    { title: "Rejected", value: rejectedQuotes.length, icon: XCircle, color: "text-red-500", bg: "bg-red-50" },
-    { title: "Total Revenue (Approved)", value: `₹${totalRevenue.toLocaleString()}`, icon: DollarSign, color: "text-purple-500", bg: "bg-purple-50" },
-    { title: "Conversion Rate", value: `${conversionRate.toFixed(1)}%`, icon: Percent, color: "text-teal-500", bg: "bg-teal-50" },
+    { title: "Total Quotations", value: totalQuotations, icon: FileText, color: "text-blue-500", bg: "bg-blue-50", link: `/admin/quotations?month=${qsMonth}&year=${qsYear}` },
+    { title: "Approved Quotations", value: approvedQuotes.length, icon: CheckCircle, color: "text-green-500", bg: "bg-green-50", link: `/admin/quotations?status=approved` },
+    { title: "Pending / Negotiating", value: pendingNegotiatingQuotes.length, icon: Clock, color: "text-amber-500", bg: "bg-amber-50", link: `/admin/quotations?status=pending` },
+    { title: "Rejected", value: rejectedQuotes.length, icon: XCircle, color: "text-red-500", bg: "bg-red-50", link: `/admin/quotations?status=rejected` },
+    { title: "Total Revenue (Approved)", value: `₹${totalRevenue.toLocaleString()}`, icon: DollarSign, color: "text-purple-500", bg: "bg-purple-50", link: `/admin/quotations?status=approved` },
+    { title: "Conversion Rate", value: `${conversionRate.toFixed(1)}%`, icon: Percent, color: "text-teal-500", bg: "bg-teal-50", link: `/admin/quotations?month=${qsMonth}&year=${qsYear}` },
   ]
 
   // --- Bar Chart: Quotations per week within selected month ---
@@ -181,7 +186,11 @@ export default function AdminAnalyticsClient({ quotations }: { quotations: Quota
       {/* Top KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {kpiStats.map((stat, i) => (
-          <Card key={i} className="rounded-2xl border-none shadow-sm ring-1 ring-gray-100 bg-white">
+          <Card 
+            key={i} 
+            className="rounded-2xl border-none shadow-sm ring-1 ring-gray-100 bg-white cursor-pointer hover:shadow-md hover:ring-gray-200 transition-all"
+            onClick={() => router.push(stat.link)}
+          >
             <CardContent className="p-6 flex items-center justify-between">
               <div>
                 <p className="text-sm font-bold text-gray-400 mb-1">{stat.title}</p>

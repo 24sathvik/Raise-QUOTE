@@ -66,7 +66,7 @@ interface Product {
   price: number
   image_url: string | null
   sku: string
-  addons?: { name: string; price: number; active?: boolean }[]
+  addons?: { name: string; price: number; active?: boolean; moc?: string; qty?: string }[]
   specs?: { key: string; value: string }[]
   features?: string[]
   category?: string
@@ -84,10 +84,11 @@ interface QuotationItem {
   price: number
   image_url: string | null
   sku: string
-  selectedAddons?: { name: string; price: number }[]
+  selectedAddons?: { name: string; price: number; moc?: string; qty?: string }[]
   specs?: { key: string; value: string }[]
   features?: string[]
   image_format?: 'wide' | 'tall'
+  selectedLineItems?: { description: string; price: number }[]
 }
 
 interface Term {
@@ -128,6 +129,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   const [items, setItems] = useState<QuotationItem[]>([])
   const [customer, setCustomer] = useState({
     name: "",
+    company: "",
     phone: "",
     email: "",
     address: "",
@@ -192,7 +194,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       try {
         const parsed = JSON.parse(draft)
         setItems(parsed.items || [])
-        setCustomer(parsed.customer || { name: "", phone: "", email: "", address: "" })
+        setCustomer(parsed.customer || { name: "", company: "", phone: "", email: "", address: "" })
         if (parsed.meta?.date) {
           setMeta(prev => ({ ...prev, date: parsed.meta.date, validity_days: parsed.meta.validity_days || 30 }))
         }
@@ -246,7 +248,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       price: mrp,
       image_url: product.image_url,
       sku: product.sku,
-      selectedAddons: product.addons ? product.addons.map(a => ({ name: a.name, price: a.price })) : [],
+      selectedAddons: product.addons ? product.addons.map(a => ({ name: a.name, price: a.price, moc: a.moc, qty: a.qty })) : [],
       specs: product.specs || [],
       features: product.features || [],
       image_format: product.image_format || 'wide'
@@ -266,7 +268,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     setItems(items => items.filter((item) => item.id !== id))
   }, [])
 
-  const toggleAddon = useCallback((itemId: string, addon: { name: string; price: number }) => {
+  const toggleAddon = useCallback((itemId: string, addon: { name: string; price: number; moc?: string; qty?: string }) => {
     setItems(items => items.map(item => {
       if (item.id === itemId) {
         const currentAddons = item.selectedAddons || []
@@ -275,6 +277,20 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
           ? currentAddons.filter(a => a.name !== addon.name)
           : [...currentAddons, addon]
         return { ...item, selectedAddons: nextAddons }
+      }
+      return item
+    }))
+  }, [])
+
+  const toggleLineItem = useCallback((itemId: string, li: { description: string; price: number }) => {
+    setItems(items => items.map(item => {
+      if (item.id === itemId) {
+        const current = item.selectedLineItems || []
+        const exists = current.find(l => l.description === li.description)
+        const next = exists
+          ? current.filter(l => l.description !== li.description)
+          : [...current, li]
+        return { ...item, selectedLineItems: next }
       }
       return item
     }))
@@ -305,7 +321,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   const clearQuotation = () => {
     if (!confirm("Are you sure you want to clear this quotation?")) return
     setItems([])
-    setCustomer({ name: "", phone: "", email: "", address: "" })
+    setCustomer({ name: "", company: "", phone: "", email: "", address: "" })
     const triggerRefetch = async () => {
       const { data: lastQuotation } = await supabase
         .from('quotations')
@@ -362,6 +378,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         quotation_number: meta.number,
         created_by: user.id,
         customer_name: customer.name,
+        customer_company: customer.company,
         customer_phone: customer.phone,
         customer_email: customer.email,
         customer_address: customer.address,
@@ -549,6 +566,15 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                         value={customer.name}
                         onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
                         placeholder="e.g. Acme Corp"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-gray-700">Company Name</Label>
+                      <Input
+                        className="h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all"
+                        value={customer.company}
+                        onChange={(e) => setCustomer({ ...customer, company: e.target.value })}
+                        placeholder="e.g. Acme Pharmaceuticals Ltd."
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -785,6 +811,29 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                       </div>
                                     </div>
                                   )}
+
+                                  {/* Extra Line Items Toggle */}
+                                  {initialProducts.find(p => p.id === item.product_id)?.line_items && (initialProducts.find(p => p.id === item.product_id)?.line_items?.length || 0) > 0 && (
+                                    <div className="space-y-2 mt-3">
+                                      <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Extra Line Items</p>
+                                      {initialProducts.find(p => p.id === item.product_id)?.line_items?.map((li: any, idx: number) => (
+                                        <div
+                                          key={idx}
+                                          className={`flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                                            item.selectedLineItems?.find((l: any) => l.description === li.description)
+                                              ? 'bg-black text-white border-black'
+                                              : 'bg-gray-50 border-gray-100 text-gray-600'
+                                          }`}
+                                          onClick={() => toggleLineItem(item.id, li)}
+                                        >
+                                          <span className="text-[10px] font-bold">{li.description}</span>
+                                          <span className="text-[10px] font-bold ml-2">
+                                            {li.price > 0 ? `${currency === 'INR' ? '₹' : '$'}${Number(li.price).toLocaleString()}` : 'Included'}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </TableCell>
@@ -949,6 +998,31 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                   >
                                     <span className="text-[10px] font-bold">
                                       {addon.name} (+{currency === 'INR' ? '₹' : '$'}{addon.price.toLocaleString()})
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Extra Line Items Toggle */}
+                          {initialProducts.find(p => p.id === item.product_id)?.line_items && (initialProducts.find(p => p.id === item.product_id)?.line_items?.length || 0) > 0 && (
+                            <div className="space-y-2 pt-2 border-t border-gray-50">
+                              <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Extra Line Items</p>
+                              <div className="flex flex-col gap-2">
+                                {initialProducts.find(p => p.id === item.product_id)?.line_items?.map((li: any, idx: number) => (
+                                  <div
+                                    key={idx}
+                                    className={`flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                                      item.selectedLineItems?.find((l: any) => l.description === li.description)
+                                        ? 'bg-black text-white border-black'
+                                        : 'bg-gray-50 border-gray-100 text-gray-600'
+                                    }`}
+                                    onClick={() => toggleLineItem(item.id, li)}
+                                  >
+                                    <span className="text-[10px] font-bold">{li.description}</span>
+                                    <span className="text-[10px] font-bold ml-2">
+                                      {li.price > 0 ? `${currency === 'INR' ? '₹' : '$'}${Number(li.price).toLocaleString()}` : 'Included'}
                                     </span>
                                   </div>
                                 ))}

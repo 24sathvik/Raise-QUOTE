@@ -31,6 +31,11 @@ interface Spec {
   value: string
 }
 
+interface LineItem {
+  description: string
+  price: number
+}
+
 interface Product {
   id: string
   name: string
@@ -42,6 +47,8 @@ interface Product {
   image_format?: 'wide' | 'tall'
   sku?: string
   category?: string
+  addons?: { name: string; price: number; moc?: string; qty?: string; active?: boolean }[]
+  line_items?: LineItem[]
   specs?: Spec[]
 }
 
@@ -50,6 +57,8 @@ export default function ProductDialog({ product }: { product?: Product }) {
   const [isLoading, setIsLoading] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(product?.image_url || null)
   const [specs, setSpecs] = useState<Spec[]>(product?.specs || [])
+  const [addons, setAddons] = useState<{ name: string; price: number; moc?: string; qty?: string; active?: boolean }[]>(product?.addons || [])
+  const [lineItems, setLineItems] = useState<LineItem[]>(product?.line_items || [])
 
   const supabase = createClient()
 
@@ -96,8 +105,10 @@ export default function ProductDialog({ product }: { product?: Product }) {
       formData.set('image_url', imageUrl)
     }
 
-    // Add specs as JSON string
+    // Add specs and addons as JSON string
     formData.set('specs', JSON.stringify(specs))
+    formData.set('addons', JSON.stringify(addons))
+    formData.set('line_items', JSON.stringify(lineItems))
     formData.delete('image') // Don't send file to server action
 
     try {
@@ -131,6 +142,22 @@ export default function ProductDialog({ product }: { product?: Product }) {
     const newSpecs = [...specs]
     newSpecs[index][field] = value
     setSpecs(newSpecs)
+  }
+
+  const addAddon = () => setAddons([...addons, { name: '', price: 0, moc: '', qty: '' }])
+  const removeAddon = (index: number) => setAddons(addons.filter((_, i) => i !== index))
+  const updateAddon = (index: number, field: string, value: string | number) => {
+    const newAddons = [...addons]
+    newAddons[index] = { ...newAddons[index], [field]: value }
+    setAddons(newAddons)
+  }
+
+  const addLineItem = () => setLineItems([...lineItems, { description: '', price: 0 }])
+  const removeLineItem = (index: number) => setLineItems(lineItems.filter((_, i) => i !== index))
+  const updateLineItem = (index: number, field: keyof LineItem, value: string | number) => {
+    const newLineItems = [...lineItems]
+    newLineItems[index] = { ...newLineItems[index], [field]: value }
+    setLineItems(newLineItems)
   }
 
   return (
@@ -293,6 +320,88 @@ export default function ProductDialog({ product }: { product?: Product }) {
                       />
                       <Label htmlFor="active" className="text-base font-bold text-gray-600 cursor-pointer">Active Product</Label>
                     </div>
+                  </div>
+                </div>
+
+                {/* Addons Section */}
+                <div className="space-y-5 pt-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-bold text-gray-700">Add-ons</Label>
+                    <Button type="button" onClick={addAddon} variant="outline" size="sm" className="h-10 px-4 text-sm border-dashed gap-2 font-bold hover:bg-gray-100 transition-colors">
+                      <Plus className="h-4 w-4" /> Add Addon
+                    </Button>
+                  </div>
+                  <div className="space-y-3 bg-gray-50/30 p-6 rounded-2xl border border-gray-100">
+                    {addons.map((addon, index) => (
+                      <div key={index} className="flex gap-4">
+                        <Input
+                          placeholder="Name"
+                          value={addon.name}
+                          onChange={(e) => updateAddon(index, 'name', e.target.value)}
+                          className="h-14 text-base bg-white shadow-sm border-gray-200 flex-1"
+                        />
+                        <Input
+                          placeholder="MOC"
+                          value={addon.moc || ""}
+                          onChange={(e) => updateAddon(index, 'moc', e.target.value)}
+                          className="h-14 text-base bg-white shadow-sm border-gray-200 w-24"
+                        />
+                        <Input
+                          placeholder="Qty"
+                          value={addon.qty || ""}
+                          onChange={(e) => updateAddon(index, 'qty', e.target.value)}
+                          className="h-14 text-base bg-white shadow-sm border-gray-200 w-20"
+                        />
+                        <Input
+                          type="number"
+                          placeholder="Price"
+                          value={addon.price}
+                          onChange={(e) => updateAddon(index, 'price', parseFloat(e.target.value) || 0)}
+                          className="h-14 text-base bg-white shadow-sm border-gray-200 w-28"
+                        />
+                        <Button type="button" onClick={() => removeAddon(index)} variant="ghost" size="icon" className="h-14 w-14 bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      </div>
+                    ))}
+                    {addons.length === 0 && (
+                      <p className="text-sm text-gray-400 font-medium italic text-center py-6">No addons added yet.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Extra Line Items Section */}
+                <div className="space-y-5 pt-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-bold text-gray-700">Extra Line Items</Label>
+                    <Button type="button" onClick={addLineItem} variant="outline" size="sm" className="h-10 px-4 text-sm border-dashed gap-2 font-bold hover:bg-gray-100 transition-colors">
+                      <Plus className="h-4 w-4" /> Add Line Item
+                    </Button>
+                  </div>
+                  <div className="space-y-3 bg-gray-50/30 p-6 rounded-2xl border border-gray-100">
+                    {lineItems.map((li, index) => (
+                      <div key={index} className="flex gap-4">
+                        <Input
+                          placeholder="e.g. Installation Qualification & OQ Documents"
+                          value={li.description}
+                          onChange={(e) => updateLineItem(index, 'description', e.target.value)}
+                          className="h-14 text-base bg-white shadow-sm border-gray-200 flex-1"
+                        />
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          value={li.price}
+                          onChange={(e) => updateLineItem(index, 'price', parseFloat(e.target.value) || 0)}
+                          className="h-14 text-base bg-white shadow-sm border-gray-200 w-32"
+                        />
+                        <Button type="button" onClick={() => removeLineItem(index)} variant="ghost" size="icon" className="h-14 w-14 bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      </div>
+                    ))}
+                    {lineItems.length === 0 && (
+                      <p className="text-sm text-gray-400 font-medium italic text-center py-6">No extra line items added yet.</p>
+                    )}
                   </div>
                 </div>
 

@@ -16,14 +16,30 @@ export async function upsertProduct(formData: FormData) {
   const sku = formData.get('sku') as string
   const category = formData.get('category') as string
   const specsString = formData.get('specs') as string
+  const addonsString = formData.get('addons') as string
+  const lineItemsString = formData.get('line_items') as string
 
   let specs = []
+  let addons = []
+  let line_items = []
   try {
     if (specsString) {
       specs = JSON.parse(specsString)
     }
   } catch (e) {
     console.error('Failed to parse specs', e)
+  }
+
+  try {
+    if (addonsString) addons = JSON.parse(addonsString)
+  } catch (e) {
+    console.error('Failed to parse addons', e)
+  }
+
+  try {
+    if (lineItemsString) line_items = JSON.parse(lineItemsString)
+  } catch (e) {
+    console.error('Failed to parse line items', e)
   }
 
   const productData = {
@@ -36,7 +52,9 @@ export async function upsertProduct(formData: FormData) {
     image_format,
     sku,
     category,
-    specs
+    specs,
+    addons,
+    line_items
   }
 
   if (id) {

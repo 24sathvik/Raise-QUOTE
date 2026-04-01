@@ -15,12 +15,13 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { supabase } from "@/lib/supabase/client"
 
-interface Addon { name: string; price: number; description?: string; active?: boolean }
+interface Addon { name: string; price: number; description?: string; active?: boolean; moc?: string; qty?: string }
 interface Spec { key: string; value: string }
+interface LineItem { description: string; price: number }
 interface Product {
   id: string; name: string; description: string; price: number; tax_percent: number
   image_url: string | null; active: boolean; category: string; sku: string
-  addons: Addon[]; specs?: Spec[]; features?: string[]; created_at: string; image_format?: 'wide' | 'tall'
+  addons: Addon[]; line_items?: LineItem[]; specs?: Spec[]; features?: string[]; created_at: string; image_format?: 'wide' | 'tall'
 }
 interface Category { id: string; name: string }
 
@@ -39,7 +40,7 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
 
   const [formData, setFormData] = useState<Partial<Product>>({
     name: "", description: "", price: 0, tax_percent: 18, active: true,
-    image_url: null, category: "", sku: "", addons: [], specs: [], features: [], image_format: "wide",
+    image_url: null, category: "", sku: "", addons: [], line_items: [], specs: [], features: [], image_format: "wide",
   })
 
   const handleSave = async (e: React.FormEvent) => {
@@ -110,7 +111,7 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
 
   const resetForm = () => {
     setSelectedProduct(null)
-    setFormData({ name: "", description: "", price: 0, tax_percent: 18, active: true, image_url: null, category: "", sku: "", addons: [], specs: [], features: [], image_format: "wide" })
+    setFormData({ name: "", description: "", price: 0, tax_percent: 18, active: true, image_url: null, category: "", sku: "", addons: [], line_items: [], specs: [], features: [], image_format: "wide" })
   }
 
   const filteredProducts = initialProducts.filter(p =>
@@ -184,8 +185,25 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
                       {formData.addons?.map((addon, i) => (
                         <div key={i} className="flex gap-2 items-start">
                           <Input placeholder="Name" className="flex-1" value={addon.name} onChange={(e) => { const next = [...(formData.addons || [])]; next[i] = { ...next[i], name: e.target.value }; setFormData({ ...formData, addons: next }) }} />
+                          <Input placeholder="MOC" className="w-24" value={addon.moc || ""} onChange={(e) => { const next = [...(formData.addons || [])]; next[i] = { ...next[i], moc: e.target.value }; setFormData({ ...formData, addons: next }) }} />
+                          <Input placeholder="Qty" className="w-20" value={addon.qty || ""} onChange={(e) => { const next = [...(formData.addons || [])]; next[i] = { ...next[i], qty: e.target.value }; setFormData({ ...formData, addons: next }) }} />
                           <Input type="number" placeholder="Price" className="w-24" value={addon.price} onChange={(e) => { const next = [...(formData.addons || [])]; next[i] = { ...next[i], price: parseFloat(e.target.value) || 0 }; setFormData({ ...formData, addons: next }) }} />
                           <button type="button" onClick={() => { const next = [...(formData.addons || [])]; next.splice(i, 1); setFormData({ ...formData, addons: next }) }} className="p-2 text-red-500 hover:bg-red-50 rounded-md"><X className="h-4 w-4" /></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400">Extra Line Items</h3>
+                      <button type="button" onClick={() => setFormData({ ...formData, line_items: [...(formData.line_items || []), { description: "", price: 0 }] })} className="text-xs font-bold text-black hover:underline flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
+                    </div>
+                    <div className="space-y-2">
+                      {formData.line_items?.map((li, i) => (
+                        <div key={i} className="flex gap-2 items-start">
+                          <Input placeholder="e.g. Installation Qualification & OQ Documents" className="flex-1" value={li.description} onChange={(e) => { const next = [...(formData.line_items || [])]; next[i] = { ...next[i], description: e.target.value }; setFormData({ ...formData, line_items: next }) }} />
+                          <Input type="number" placeholder="0" className="w-32" value={li.price} onChange={(e) => { const next = [...(formData.line_items || [])]; next[i] = { ...next[i], price: parseFloat(e.target.value) || 0 }; setFormData({ ...formData, line_items: next }) }} />
+                          <button type="button" onClick={() => { const next = [...(formData.line_items || [])]; next.splice(i, 1); setFormData({ ...formData, line_items: next }) }} className="p-2 text-red-500 hover:bg-red-50 rounded-md"><X className="h-4 w-4" /></button>
                         </div>
                       ))}
                     </div>
@@ -300,7 +318,7 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
                     </TableCell>
                     <TableCell className="text-right px-6">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => { setSelectedProduct(p); setFormData({ ...p, addons: p.addons || [], specs: p.specs || [] }); setIsDialogOpen(true) }} className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><Edit2 className="h-4 w-4" /></button>
+                        <button onClick={() => { setSelectedProduct(p); setFormData({ ...p, addons: p.addons || [], line_items: p.line_items || [], specs: p.specs || [] }); setIsDialogOpen(true) }} className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><Edit2 className="h-4 w-4" /></button>
                         <button onClick={() => handleToggleStatus(p)} className={`p-2 rounded-lg transition-colors ${p.active ? "text-red-500 hover:bg-red-50" : "text-green-500 hover:bg-green-50"}`}>
                           {p.active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
                         </button>

@@ -1,7 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Calendar, Download, Menu, X, Plus, Package, LogOut, FileText } from "lucide-react"
+import { Search, Calendar, Download, Menu, X, Plus, Package, LogOut, FileText, ChevronDown } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
+import { toast } from "sonner"
 import Link from "next/link"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -42,13 +46,36 @@ const statusLabels: Record<QuotationStatus, string> = {
 
 export default function QuotationsClient({ initialQuotations, user }: { initialQuotations: Quotation[], user: UserProfile }) {
   const [search, setSearch] = useState("")
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const router = useRouter()
+  const supabase = createClient()
 
   const filtered = initialQuotations.filter(
     (q) =>
       q.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
       q.quotation_number?.toLowerCase().includes(search.toLowerCase())
   )
+
+  const handleStatusChange = async (id: string, newStatus: QuotationStatus) => {
+    setUpdatingId(id)
+    try {
+      const { error } = await supabase
+        .from('quotations')
+        .update({ status: newStatus })
+        .eq('id', id)
+
+      if (error) throw error
+      
+      toast.success("Status updated successfully")
+      router.refresh()
+    } catch (error) {
+      console.error(error)
+      toast.error("Failed to update status")
+    } finally {
+      setUpdatingId(null)
+    }
+  }
 
   return (
     <div className="flex min-h-screen bg-[#FDFDFD]">
@@ -184,9 +211,26 @@ export default function QuotationsClient({ initialQuotations, user }: { initialQ
                         <TableCell className="px-6 py-4"><div className="text-sm font-bold text-black">{q.customer_name}</div></TableCell>
                         <TableCell className="px-6 py-4 text-sm font-black text-black block w-auto">₹{q.grand_total?.toLocaleString()}</TableCell>
                         <TableCell className="px-6 py-4">
-                          <Badge variant="outline" className={`font-semibold border-none py-1 px-3 ${statusColors[q.status || 'pending']}`}>
-                            {statusLabels[q.status || 'pending']}
-                          </Badge>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger disabled={updatingId === q.id} className="focus:outline-none disabled:opacity-50">
+                              <Badge variant="outline" className={`flex items-center gap-1 cursor-pointer transition-colors border-none py-1 px-3 ${statusColors[q.status || 'pending']}`}>
+                                {statusLabels[q.status || 'pending']}
+                                <ChevronDown className="h-3 w-3 opacity-50" />
+                              </Badge>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start">
+                              {(Object.keys(statusLabels) as QuotationStatus[]).map((status) => (
+                                <DropdownMenuItem
+                                  key={status}
+                                  onClick={() => handleStatusChange(q.id, status)}
+                                  className="cursor-pointer font-medium"
+                                >
+                                  <div className={`w-2 h-2 rounded-full mr-2 ${status === 'pending' ? 'bg-gray-500' : status === 'negotiating' ? 'bg-blue-500' : status === 'approved' ? 'bg-green-500' : status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                                  {statusLabels[status]}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                         <TableCell className="px-6 py-4 text-gray-400">
                           <div className="flex items-center gap-2">

@@ -226,12 +226,12 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     doc.setFont("helvetica", "normal")
     doc.setFontSize(9)
     const splitDesc = doc.splitTextToSize(item.description || "", pageWidth - (margin * 2))
-    
+
     if (currentY + (splitDesc.length * 5) > contentBottomLimit - 10 && currentY > 70) {
-         doc.addPage();
-         drawPageBorder();
-         drawHeader(logoBase64);
-         currentY = 50;
+      doc.addPage();
+      drawPageBorder();
+      drawHeader(logoBase64);
+      currentY = 50;
     }
     doc.text(splitDesc, margin, currentY)
     currentY += (splitDesc.length * 4.5) + 5
@@ -294,8 +294,8 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
         currentY += featureHeight
       })
       currentY += 5
-    } 
-    
+    }
+
     // --- FORMAT 2: TALL (Features Left, Image Right) ---
     else {
       checkAddPage(25) // Basic space for section trigger check
@@ -304,19 +304,19 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       doc.setFontSize(10)
       doc.text("FEATURES:", margin, currentY)
       currentY += 6
-      
+
       const featureStartY = currentY
       const contentWidth = pageWidth - (margin * 2)
       const featureWidth = contentWidth * 0.55
-      
+
       doc.setFont("helvetica", "normal")
       doc.setFontSize(9)
-      
+
       // Calculate features block height first for pagination check
       let featuresBlockHeight = 0
       features.forEach((f: string) => {
-          const split = doc.splitTextToSize(f, featureWidth - 5)
-          featuresBlockHeight += split.length * 4.5
+        const split = doc.splitTextToSize(f, featureWidth - 5)
+        featuresBlockHeight += split.length * 4.5
       })
 
       // Try image height as well to wrap appropriately
@@ -332,7 +332,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       if (totalTallHeight <= contentBottomLimit - 50) {
         checkAddPage(totalTallHeight)
       }
-      
+
       // Re-assign start Y in case checkAddPage jumped to next page
       const currentFeatureStartY = currentY
 
@@ -342,7 +342,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
         doc.text(splitFeature, margin + 8, currentY)
         currentY += splitFeature.length * 4.5
       })
-      
+
       const featuresEndY = currentY;
 
       let imageEndY = currentFeatureStartY;
@@ -354,11 +354,11 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
         const newHeight = imageData.height * ratio
 
         const imgX = pageWidth - margin - newWidth
-        
+
         doc.addImage(imageData.base64, "JPEG", imgX, currentFeatureStartY, newWidth, newHeight)
-        imageEndY = currentFeatureStartY + newHeight 
+        imageEndY = currentFeatureStartY + newHeight
       }
-      
+
       currentY = Math.max(featuresEndY, imageEndY) + 8
     }
 
@@ -374,7 +374,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
       item.specs.forEach((s: { key: string; value: string }) => {
         checkAddPage(6)
-        
+
         doc.text("•", margin + 3, currentY)
         doc.setFont("helvetica", "bold")
         doc.text(s.key, margin + 8, currentY)
