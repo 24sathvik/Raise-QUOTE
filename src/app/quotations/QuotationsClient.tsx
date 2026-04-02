@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Search, Calendar, Download, Menu, X, Plus, Package, LogOut, FileText, ChevronDown } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
@@ -17,6 +18,9 @@ interface Quotation {
   id: string
   quotation_number: string
   customer_name: string
+  customer_company: string | null
+  customer_phone: string | null
+  customer_email: string | null
   grand_total: number
   created_at: string
   status: QuotationStatus
@@ -46,16 +50,42 @@ const statusLabels: Record<QuotationStatus, string> = {
 
 export default function QuotationsClient({ initialQuotations, user }: { initialQuotations: Quotation[], user: UserProfile }) {
   const [search, setSearch] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [sortField, setSortField] = useState<'created_at' | 'grand_total' | 'status' | 'customer_name'>('created_at')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+  
   const router = useRouter()
   const supabase = createClient()
 
   const filtered = initialQuotations.filter(
     (q) =>
-      q.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
-      q.quotation_number?.toLowerCase().includes(search.toLowerCase())
+      q.customer_name?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+      q.quotation_number?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+      q.customer_company?.toLowerCase().includes(debouncedSearch.toLowerCase())
   )
+
+  const statusOrder = { approved: 0, negotiating: 1, pending: 2, on_hold: 3, rejected: 4 }
+
+  const sorted = [...filtered].sort((a, b) => {
+    let valA: any = (a as any)[sortField]
+    let valB: any = (b as any)[sortField]
+
+    if (sortField === 'status') {
+      valA = statusOrder[a.status as keyof typeof statusOrder] ?? 99
+      valB = statusOrder[b.status as keyof typeof statusOrder] ?? 99
+      return sortDir === 'asc' ? valA - valB : valB - valA
+    }
+
+    if (typeof valA === 'string') return sortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA)
+    return sortDir === 'asc' ? valA - valB : valB - valA
+  })
 
   const handleStatusChange = async (id: string, newStatus: QuotationStatus) => {
     setUpdatingId(id)
@@ -168,19 +198,39 @@ export default function QuotationsClient({ initialQuotations, user }: { initialQ
 
         <div className="mx-auto max-w-5xl px-4 py-8 lg:px-10 lg:py-10 space-y-8">
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-black">Welcome back, {user.full_name}</h1>
+            <h1 className="text-3xl font-black tracking-tight text-black">My Quotations</h1>
             <p className="text-sm font-medium text-gray-400">You have {initialQuotations.length} quotations generated in total.</p>
           </div>
           
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center justify-between">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search by customer or number..."
+                placeholder="Search by customer, company, or number..."
                 className="pl-9 h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all font-medium"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold whitespace-nowrap text-gray-500">Sort by:</span>
+              <Select value={`${sortField}-${sortDir}`} onValueChange={(val) => {
+                const [f, d] = val.split('-') as [typeof sortField, 'asc' | 'desc']
+                setSortField(f)
+                setSortDir(d)
+              }}>
+                <SelectTrigger className="h-11 rounded-xl bg-white border-gray-100 font-medium">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="created_at-desc">Date (Newest)</SelectItem>
+                  <SelectItem value="created_at-asc">Date (Oldest)</SelectItem>
+                  <SelectItem value="grand_total-desc">Amount (Highest)</SelectItem>
+                  <SelectItem value="grand_total-asc">Amount (Lowest)</SelectItem>
+                  <SelectItem value="status-desc">Status (Approved first)</SelectItem>
+                  <SelectItem value="customer_name-asc">Customer A-Z</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -189,43 +239,56 @@ export default function QuotationsClient({ initialQuotations, user }: { initialQ
               <Table>
                 <TableHeader className="bg-gray-50/50">
                   <TableRow className="border-b-gray-100 hover:bg-transparent">
-                    <TableHead className="px-6 py-4 whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-gray-400">Number</TableHead>
+                    <TableHead className="px-6 py-4 whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-gray-400">#</TableHead>
+                    <TableHead className="px-6 py-4 whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-gray-400">Quotation No</TableHead>
                     <TableHead className="px-6 py-4 whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-gray-400">Customer</TableHead>
+                    <TableHead className="px-6 py-4 whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-gray-400">Company</TableHead>
+                    <TableHead className="px-6 py-4 whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-gray-400">Phone</TableHead>
+                    <TableHead className="px-6 py-4 whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-gray-400">Email</TableHead>
                     <TableHead className="px-6 py-4 whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-gray-400">Amount</TableHead>
                     <TableHead className="px-6 py-4 whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-gray-400">Status</TableHead>
                     <TableHead className="px-6 py-4 whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-gray-400">Date</TableHead>
-                    <TableHead className="px-6 py-4 whitespace-nowrap text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Actions</TableHead>
+                    <TableHead className="px-6 py-4 whitespace-nowrap text-right text-[10px] font-black uppercase tracking-widest text-gray-400">PDF</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.length === 0 ? (
+                  {sorted.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="h-32 text-center text-sm font-bold text-gray-400">
+                      <TableCell colSpan={10} className="h-32 text-center text-sm font-bold text-gray-400">
                         {search ? "No matches found." : "You haven't created any quotations yet."}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filtered.map((q) => (
+                    sorted.map((q, idx) => (
                       <TableRow key={q.id} className="hover:bg-gray-50/50 transition-colors border-gray-50">
+                        <TableCell className="px-6 py-4 font-bold text-gray-400 text-xs">{idx + 1}</TableCell>
                         <TableCell className="px-6 py-4 font-mono text-xs font-bold text-black">{q.quotation_number}</TableCell>
                         <TableCell className="px-6 py-4"><div className="text-sm font-bold text-black">{q.customer_name}</div></TableCell>
-                        <TableCell className="px-6 py-4 text-sm font-black text-black block w-auto">₹{q.grand_total?.toLocaleString()}</TableCell>
+                        <TableCell className="px-6 py-4"><div className="text-xs font-medium text-gray-500">{q.customer_company || "—"}</div></TableCell>
+                        <TableCell className="px-6 py-4"><div className="text-xs font-medium text-gray-500">{q.customer_phone || "—"}</div></TableCell>
+                        <TableCell className="px-6 py-4"><div className="text-xs font-medium text-gray-500">{q.customer_email || "—"}</div></TableCell>
+                        <TableCell className="px-6 py-4 text-sm font-black text-black">₹{q.grand_total?.toLocaleString()}</TableCell>
                         <TableCell className="px-6 py-4">
                           <DropdownMenu>
-                            <DropdownMenuTrigger disabled={updatingId === q.id} className="focus:outline-none disabled:opacity-50">
-                              <Badge variant="outline" className={`flex items-center gap-1 cursor-pointer transition-colors border-none py-1 px-3 ${statusColors[q.status || 'pending']}`}>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                disabled={updatingId === q.id}
+                                className={`flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-xl transition-all cursor-pointer font-bold text-xs ring-1 ring-offset-1 hover:ring-2 disabled:opacity-50 ${statusColors[q.status || 'pending']}`}
+                              >
                                 {statusLabels[q.status || 'pending']}
-                                <ChevronDown className="h-3 w-3 opacity-50" />
-                              </Badge>
+                                <ChevronDown className="h-4 w-4 opacity-50" />
+                              </button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start">
+                            <DropdownMenuContent align="end" className="w-[200px] rounded-xl p-2 shadow-xl border border-gray-100 bg-white">
                               {(Object.keys(statusLabels) as QuotationStatus[]).map((status) => (
                                 <DropdownMenuItem
                                   key={status}
                                   onClick={() => handleStatusChange(q.id, status)}
-                                  className="cursor-pointer font-medium"
+                                  className={`flex items-center gap-2 min-h-[44px] rounded-lg px-4 py-3 mb-1 cursor-pointer font-bold text-xs transition-all last:mb-0 ${
+                                    q.status === status ? statusColors[status] : "text-gray-600 hover:bg-gray-50 focus:bg-gray-50"
+                                  }`}
                                 >
-                                  <div className={`w-2 h-2 rounded-full mr-2 ${status === 'pending' ? 'bg-gray-500' : status === 'negotiating' ? 'bg-blue-500' : status === 'approved' ? 'bg-green-500' : status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                                  <div className={`h-2 w-2 rounded-full ${statusColors[status].split(" ")[0].replace("bg-", "bg-").replace("-100", "-500")}`} />
                                   {statusLabels[status]}
                                 </DropdownMenuItem>
                               ))}

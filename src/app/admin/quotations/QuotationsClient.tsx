@@ -18,6 +18,8 @@ interface Quotation {
   quotation_number: string
   customer_name: string
   customer_company: string | null
+  customer_phone: string | null
+  customer_email: string | null
   grand_total: number
   created_at: string
   pdf_url: string | null
@@ -58,27 +60,23 @@ export default function QuotationsClient({ initialQuotations, activeFilters }: {
       q.profiles?.full_name?.toLowerCase().includes(search.toLowerCase())
   )
 
-  const getStatusWeight = (status: QuotationStatus) => {
-    const order = { approved: 5, negotiating: 4, pending: 3, on_hold: 2, rejected: 1 }
-    return order[status] || 0
-  }
+  const statusOrder = { approved: 0, negotiating: 1, pending: 2, on_hold: 3, rejected: 4 }
 
   const sorted = [...filtered].sort((a, b) => {
-    let diff = 0
-    if (sortField === 'created_at') {
-      diff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    } else if (sortField === 'grand_total') {
-      diff = (a.grand_total || 0) - (b.grand_total || 0)
+    let valA: any, valB: any
+    if (sortField === 'salesperson') {
+      valA = a.profiles?.full_name || ''
+      valB = b.profiles?.full_name || ''
     } else if (sortField === 'status') {
-      diff = getStatusWeight(a.status) - getStatusWeight(b.status)
-    } else if (sortField === 'customer_name') {
-      diff = a.customer_name.localeCompare(b.customer_name)
-    } else if (sortField === 'salesperson') {
-      const nameA = a.profiles?.full_name || ""
-      const nameB = b.profiles?.full_name || ""
-      diff = nameA.localeCompare(nameB)
+      valA = statusOrder[a.status as keyof typeof statusOrder] ?? 99
+      valB = statusOrder[b.status as keyof typeof statusOrder] ?? 99
+      return sortDir === 'asc' ? valA - valB : valB - valA
+    } else {
+      valA = (a as any)[sortField]
+      valB = (b as any)[sortField]
     }
-    return sortDir === 'asc' ? diff : -diff
+    if (typeof valA === 'string') return sortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA)
+    return sortDir === 'asc' ? valA - valB : valB - valA
   })
 
   const handleSort = (field: typeof sortField) => {
@@ -182,6 +180,8 @@ export default function QuotationsClient({ initialQuotations, activeFilters }: {
                   Customer <SortIcon field="customer_name" />
                 </TableHead>
                 <TableHead className="whitespace-nowrap">Company</TableHead>
+                <TableHead className="whitespace-nowrap">Phone</TableHead>
+                <TableHead className="whitespace-nowrap">Email</TableHead>
                 <TableHead className="whitespace-nowrap cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('salesperson')}>
                   Salesperson <SortIcon field="salesperson" />
                 </TableHead>
@@ -208,6 +208,8 @@ export default function QuotationsClient({ initialQuotations, activeFilters }: {
                     <TableCell className="font-mono text-xs font-semibold">{q.quotation_number}</TableCell>
                     <TableCell><div className="font-medium">{q.customer_name}</div></TableCell>
                     <TableCell><div className="text-xs text-gray-500">{q.customer_company || "—"}</div></TableCell>
+                    <TableCell><div className="text-xs text-gray-500">{q.customer_phone || "—"}</div></TableCell>
+                    <TableCell><div className="text-xs text-gray-500">{q.customer_email || "—"}</div></TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <User className="h-3 w-3 text-muted-foreground" />

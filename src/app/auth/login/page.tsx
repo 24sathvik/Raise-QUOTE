@@ -50,7 +50,7 @@ export default function LoginPage() {
           <p className="text-muted-foreground">Sign in to your Raise Labs account</p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-6">
+        <form suppressHydrationWarning onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-4">
             <div className="space-y-2">
               <Label className="text-sm font-semibold text-gray-700">Email Address</Label>
@@ -83,6 +83,7 @@ export default function LoginPage() {
           </div>
 
           <button
+            suppressHydrationWarning
             disabled={loading}
             type="submit"
             className="group relative flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-black font-semibold text-white transition-all hover:bg-black/90 disabled:opacity-50"

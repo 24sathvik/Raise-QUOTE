@@ -17,7 +17,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Plus, Loader2, Image as ImageIcon, Trash2 } from 'lucide-react'
 import { upsertProduct } from './actions'
 import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
+import { supabase } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
 import {
   Select,
   SelectContent,
@@ -59,8 +60,7 @@ export default function ProductDialog({ product }: { product?: Product }) {
   const [specs, setSpecs] = useState<Spec[]>(product?.specs || [])
   const [addons, setAddons] = useState<{ name: string; price: number; moc?: string; qty?: string; active?: boolean }[]>(product?.addons || [])
   const [lineItems, setLineItems] = useState<LineItem[]>(product?.line_items || [])
-
-  const supabase = createClient()
+  const router = useRouter()
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -119,6 +119,7 @@ export default function ProductDialog({ product }: { product?: Product }) {
       } else {
         toast.success(`Product ${product ? 'updated' : 'created'} successfully`)
         setOpen(false)
+        router.refresh()
       }
     } catch (error) {
       console.error(error)

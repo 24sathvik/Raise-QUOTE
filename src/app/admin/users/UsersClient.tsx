@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Plus, Search, MoreHorizontal, Power, PowerOff, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
@@ -26,26 +26,38 @@ interface Profile {
 export default function UsersClient({ initialUsers }: { initialUsers: Profile[] }) {
   const router = useRouter()
   const [search, setSearch] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [formData, setFormData] = useState({ name: "", email: "", password: "", role: "sales", phone: "" })
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: formData.email,
-      password: formData.password,
-      options: { data: { name: formData.name } },
-    })
-    if (authError) return toast.error(authError.message)
-    if (!authData.user) return toast.error("Failed to create user")
-    const { error: profileError } = await supabase.from("profiles").insert({
-      id: authData.user.id, full_name: formData.name, email: formData.email,
-      phone: formData.phone, role: formData.role, active: true,
-    })
-    if (profileError) return toast.error(profileError.message)
-    toast.success("User created successfully")
-    setIsCreateOpen(false)
-    router.refresh()
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          name: formData.name,
+          role: formData.role,
+          phone: formData.phone
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to create user')
+      
+      toast.success("User created successfully")
+      setIsCreateOpen(false)
+      router.refresh()
+    } catch (error: any) {
+      toast.error(error.message)
+    }
   }
 
   async function handleToggle(user: Profile) {
@@ -62,7 +74,7 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
   }
 
   const filtered = initialUsers.filter(
-    (u) => u.full_name?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase())
+    (u) => u.full_name?.toLowerCase().includes(debouncedSearch.toLowerCase()) || u.email?.toLowerCase().includes(debouncedSearch.toLowerCase())
   )
 
   return (

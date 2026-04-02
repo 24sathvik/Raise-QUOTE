@@ -21,7 +21,7 @@ export default async function UserQuotationsPage() {
 
   const { data: quotations } = await supabase
     .from("quotations")
-    .select(`id, quotation_number, customer_name, grand_total, created_at, status, pdf_url`)
+    .select(`id, quotation_number, customer_name, customer_company, customer_phone, customer_email, grand_total, created_at, status, pdf_url`)
     .eq("created_by", user.id)
     .order("created_at", { ascending: false })
 

@@ -27,19 +27,16 @@ export async function upsertProduct(formData: FormData) {
       specs = JSON.parse(specsString)
     }
   } catch (e) {
-    console.error('Failed to parse specs', e)
   }
 
   try {
     if (addonsString) addons = JSON.parse(addonsString)
   } catch (e) {
-    console.error('Failed to parse addons', e)
   }
 
   try {
     if (lineItemsString) line_items = JSON.parse(lineItemsString)
   } catch (e) {
-    console.error('Failed to parse line items', e)
   }
 
   const productData = {

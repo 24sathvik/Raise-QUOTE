@@ -67,6 +67,7 @@ interface Product {
   image_url: string | null
   sku: string
   addons?: { name: string; price: number; active?: boolean; moc?: string; qty?: string }[]
+  line_items?: { description: string; price: number }[]
   specs?: { key: string; value: string }[]
   features?: string[]
   category?: string
@@ -88,6 +89,7 @@ interface QuotationItem {
   specs?: { key: string; value: string }[]
   features?: string[]
   image_format?: 'wide' | 'tall'
+  availableLineItems?: { description: string; price: number }[]
   selectedLineItems?: { description: string; price: number }[]
 }
 
@@ -187,24 +189,38 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     fetchNextQuotationNumber()
   }, [supabase])
 
-  // Load draft
+  // Load draft — only restore if version matches to avoid stale data on schema changes
   useEffect(() => {
+    const DRAFT_VERSION = 'v3'
     const draft = localStorage.getItem("quotation_draft")
     if (draft) {
       try {
         const parsed = JSON.parse(draft)
-        setItems(parsed.items || [])
+        // Clear if version mismatch or no items — prevents stale/broken state on reload
+        if (parsed._v !== DRAFT_VERSION || !parsed.items?.length) {
+          localStorage.removeItem("quotation_draft")
+          return
+        }
+        const enrichedItems = (parsed.items || []).map((item: QuotationItem) => {
+          const source = initialProducts.find((p: Product) => p.id === item.product_id)
+          return {
+            ...item,
+            availableLineItems: item.availableLineItems ?? (source?.line_items ? [...source.line_items] : []),
+            selectedLineItems: item.selectedLineItems ?? (source?.line_items ? [...source.line_items] : []),
+          }
+        })
+        setItems(enrichedItems)
         setCustomer(parsed.customer || { name: "", company: "", phone: "", email: "", address: "" })
         if (parsed.meta?.date) {
           setMeta(prev => ({ ...prev, date: parsed.meta.date, validity_days: parsed.meta.validity_days || 30 }))
         }
         setDiscount(parsed.discount || 0)
-
         if (parsed.terms) {
           setTerms(parsed.terms)
         }
       } catch (e) {
-        console.error("Failed to load draft", e)
+        // Corrupt draft — wipe it
+        localStorage.removeItem("quotation_draft")
       }
     }
   }, [])
@@ -214,7 +230,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     const timeoutId = setTimeout(() => {
       localStorage.setItem(
         "quotation_draft",
-        JSON.stringify({ items, customer, meta, discount, terms })
+        JSON.stringify({ _v: 'v3', items, customer, meta, discount, terms })
       )
     }, 1000)
 
@@ -224,7 +240,8 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   const totals = useMemo(() => {
     const subtotal = items.reduce((acc, item) => {
       const addonsPrice = item.selectedAddons?.reduce((sum, addon) => sum + addon.price, 0) || 0
-      return acc + (item.price + addonsPrice) * item.qty
+      const lineItemsPrice = item.selectedLineItems?.reduce((sum, li) => sum + li.price, 0) || 0
+      return acc + (item.price + addonsPrice + lineItemsPrice) * item.qty
     }, 0)
 
     const tax_amount = 0
@@ -248,7 +265,14 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       price: mrp,
       image_url: product.image_url,
       sku: product.sku,
-      selectedAddons: product.addons ? product.addons.map(a => ({ name: a.name, price: a.price, moc: a.moc, qty: a.qty })) : [],
+      // All addons pre-selected
+      selectedAddons: product.addons
+        ? product.addons.map(a => ({ name: a.name, price: a.price, moc: a.moc, qty: a.qty }))
+        : [],
+      // Full list stored on the item — used for rendering checkboxes
+      availableLineItems: product.line_items ? [...product.line_items] : [],
+      // All extra line items pre-selected by default
+      selectedLineItems: product.line_items ? [...product.line_items] : [],
       specs: product.specs || [],
       features: product.features || [],
       image_format: product.image_format || 'wide'
@@ -296,15 +320,14 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     }))
   }, [])
 
+  // Warranty terms behave as a radio group — selecting one deselects all others.
+  // Non-warranty terms toggle normally.
   const toggleTerm = useCallback((termId: string) => {
     setTerms(terms => {
       const clickedTerm = terms.find(t => t.id === termId)
-
-      // Check if clicked term is a warranty option
       const isWarrantyTerm = WARRANTY_TERMS.includes(clickedTerm?.text || "")
 
       if (isWarrantyTerm) {
-        // Radio behavior: deselect all warranty terms, select only clicked one
         return terms.map(t => {
           if (WARRANTY_TERMS.includes(t.text)) {
             return { ...t, selected: t.id === termId }
@@ -312,7 +335,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
           return t
         })
       } else {
-        // Normal toggle for non-warranty terms
         return terms.map(t => t.id === termId ? { ...t, selected: !t.selected } : t)
       }
     })
@@ -389,6 +411,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         total_amount: totals.grand_total,
         discount_total: discount,
         grand_total: totals.grand_total,
+        status: 'pending',
       }).select().single()
 
       if (error) throw error
@@ -400,7 +423,10 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         items: items,
         settings,
         user,
-        selectedTerms: terms.filter(t => t.selected).map(t => ({ title: t.text.split(':')[0], text: t.text.split(':').slice(1).join(':').trim() })),
+        selectedTerms: terms.filter(t => t.selected).map(t => ({
+          title: t.text.split(':')[0],
+          text: t.text.split(':').slice(1).join(':').trim()
+        })),
         currency,
         validityData: {
           validityDate: calculatedValidityDate,
@@ -430,12 +456,34 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       }
 
       toast.success("Quotation saved and PDF generated")
+
+      // Auto-increment for next quotation
+      setMeta(prev => {
+        const match = prev.number.match(/RLE-(\d+)/)
+        if (match) return { ...prev, number: `RLE-${parseInt(match[1]) + 1}` }
+        return prev
+      })
     } catch (err: any) {
-      toast.error(err.message)
+      // Next.js 15 dev HMR aborts in-flight fetches — retry once automatically
+      if (err.name === 'AbortError') {
+        setSaving(false)
+        toast.info("Connection interrupted, retrying...")
+        setTimeout(() => handleDownload(), 800)
+        return
+      }
+      toast.error(err.message || 'An unexpected error occurred')
     } finally {
       setSaving(false)
     }
   }
+
+  // ─── Derived term lists for rendering ────────────────────────────────────────
+  const nonWarrantyTerms = useMemo(() => terms.filter(t => !WARRANTY_TERMS.includes(t.text)), [terms])
+  const warrantyTerms = useMemo(() => terms.filter(t => WARRANTY_TERMS.includes(t.text)), [terms])
+  const selectedWarrantyLabel = useMemo(() => {
+    const selected = warrantyTerms.find(t => t.selected)
+    return selected ? selected.text.split(':').slice(1).join(':').trim() : "None selected"
+  }, [warrantyTerms])
 
   return (
     <div className="flex min-h-screen bg-[#FDFDFD]">
@@ -510,10 +558,10 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                 <p className="truncate text-[10px] font-medium text-gray-400 uppercase tracking-wider">Professional</p>
               </div>
               <form action="/auth/signout" method="POST">
-  <button type="submit" className="text-gray-400 hover:text-red-500 transition-colors">
-    <LogOut className="h-4 w-4" />
-  </button>
-</form>
+                <button type="submit" className="text-gray-400 hover:text-red-500 transition-colors">
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </form>
             </div>
           </div>
         </div>
@@ -564,7 +612,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                       <Input
                         className="h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all"
                         value={customer.name}
-                        onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
+                        onChange={(e: any) => setCustomer({ ...customer, name: e.target.value })}
                         placeholder="e.g. Acme Corp"
                       />
                     </div>
@@ -573,7 +621,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                       <Input
                         className="h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all"
                         value={customer.company}
-                        onChange={(e) => setCustomer({ ...customer, company: e.target.value })}
+                        onChange={(e: any) => setCustomer({ ...customer, company: e.target.value })}
                         placeholder="e.g. Acme Pharmaceuticals Ltd."
                       />
                     </div>
@@ -582,7 +630,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                       <Input
                         className="h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all"
                         value={customer.phone}
-                        onChange={(e) => setCustomer({ ...customer, phone: e.target.value })}
+                        onChange={(e: any) => setCustomer({ ...customer, phone: e.target.value })}
                         placeholder="+91..."
                       />
                     </div>
@@ -592,7 +640,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                     <Input
                       className="h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all"
                       value={customer.email}
-                      onChange={(e) => setCustomer({ ...customer, email: e.target.value })}
+                      onChange={(e: any) => setCustomer({ ...customer, email: e.target.value })}
                       placeholder="client@company.com"
                     />
                   </div>
@@ -601,7 +649,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                     <Input
                       className="h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all"
                       value={customer.address}
-                      onChange={(e) => setCustomer({ ...customer, address: e.target.value })}
+                      onChange={(e: any) => setCustomer({ ...customer, address: e.target.value })}
                       placeholder="Full address details"
                     />
                   </div>
@@ -618,7 +666,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                     <Input
                       className="h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all font-mono"
                       value={meta.number}
-                      onChange={(e) => setMeta({ ...meta, number: e.target.value })}
+                      onChange={(e: any) => setMeta({ ...meta, number: e.target.value })}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -627,7 +675,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                       type="date"
                       className="h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all"
                       value={meta.date}
-                      onChange={(e) => setMeta({ ...meta, date: e.target.value })}
+                      onChange={(e: any) => setMeta({ ...meta, date: e.target.value })}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -636,7 +684,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                       type="number"
                       className="h-11 rounded-xl border-gray-100 bg-gray-50/50 focus:bg-white transition-all"
                       value={meta.validity_days}
-                      onChange={(e) => {
+                      onChange={(e: any) => {
                         const value = e.target.value
                         setMeta({
                           ...meta,
@@ -772,133 +820,147 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                           </TableCell>
                         </TableRow>
                       ) : (
-                        items.map((item) => (
-                          <TableRow key={item.id} className="border-gray-50 group hover:bg-gray-50/30 transition-colors">
-                            <TableCell className="px-8 py-6">
-                              <div className="flex items-start gap-4">
-                                <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
-                                  {item.image_url && <Image src={item.image_url} alt={item.name} fill className="object-contain p-2" />}
-                                </div>
-                                <div className="space-y-4 flex-1">
-                                  <div className="space-y-1">
-                                    <p className="text-sm font-black text-black uppercase tracking-tight">{item.name}</p>
-                                    <p className="text-xs text-gray-400 line-clamp-1">{item.description}</p>
+                        items.map((item) => {
+                          const sourceProduct = initialProducts.find(p => p.id === item.product_id)
+                          return (
+                            <TableRow key={item.id} className="border-gray-50 group hover:bg-gray-50/30 transition-colors">
+                              <TableCell className="px-8 py-6">
+                                <div className="flex items-start gap-4">
+                                  <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+                                    {item.image_url && <Image src={item.image_url} alt={item.name} fill className="object-contain p-2" />}
                                   </div>
-                                  {initialProducts.find(p => p.id === item.product_id)?.addons && initialProducts.find(p => p.id === item.product_id)?.addons!.length > 0 && (
-                                    <div className="space-y-2">
-                                      <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Available Addons</p>
-                                      <div className="flex flex-col gap-2">
-                                        {initialProducts.find(p => p.id === item.product_id)?.addons?.map((addon) => (
-                                          <div
-                                            key={addon.name}
-                                            className="flex items-center space-x-2 bg-gray-50/50 px-3 py-1.5 rounded-lg border border-gray-100 hover:border-black/10 transition-colors cursor-pointer"
-                                            onClick={() => toggleAddon(item.id, addon)}
-                                          >
-                                            <Checkbox
-                                              id={`addon-${item.id}-${addon.name}`}
-                                              checked={!!item.selectedAddons?.find(a => a.name === addon.name)}
-                                              onCheckedChange={() => toggleAddon(item.id, addon)}
-                                              className="data-[state=checked]:bg-black data-[state=checked]:border-black"
-                                            />
-                                            <label
-                                              htmlFor={`addon-${item.id}-${addon.name}`}
-                                              className="text-[10px] font-bold text-gray-600 cursor-pointer"
-                                            >
-                                              {addon.name} (+{currency === 'INR' ? '₹' : '$'}{addon.price.toLocaleString()})
-                                            </label>
-                                          </div>
-                                        ))}
-                                      </div>
+                                  <div className="space-y-4 flex-1">
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-black text-black uppercase tracking-tight">{item.name}</p>
+                                      <p className="text-xs text-gray-400">
+                                        {item.description?.length > 120
+                                          ? item.description.substring(0, 120) + "..."
+                                          : item.description}
+                                      </p>
                                     </div>
-                                  )}
 
-                                  {/* Extra Line Items Toggle */}
-                                  {initialProducts.find(p => p.id === item.product_id)?.line_items && (initialProducts.find(p => p.id === item.product_id)?.line_items?.length || 0) > 0 && (
-                                    <div className="space-y-2 mt-3">
-                                      <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Extra Line Items</p>
-                                      {initialProducts.find(p => p.id === item.product_id)?.line_items?.map((li: any, idx: number) => (
-                                        <div
-                                          key={idx}
-                                          className={`flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-                                            item.selectedLineItems?.find((l: any) => l.description === li.description)
-                                              ? 'bg-black text-white border-black'
-                                              : 'bg-gray-50 border-gray-100 text-gray-600'
-                                          }`}
-                                          onClick={() => toggleLineItem(item.id, li)}
-                                        >
-                                          <span className="text-[10px] font-bold">{li.description}</span>
-                                          <span className="text-[10px] font-bold ml-2">
-                                            {li.price > 0 ? `${currency === 'INR' ? '₹' : '$'}${Number(li.price).toLocaleString()}` : 'Included'}
-                                          </span>
+                                    {/* Addons */}
+                                    {sourceProduct?.addons && sourceProduct.addons.length > 0 && (
+                                      <div className="space-y-2">
+                                        <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Available Addons</p>
+                                        <div className="flex flex-col gap-2">
+                                          {sourceProduct.addons.map((addon) => (
+                                            <div
+                                              key={addon.name}
+                                              className="flex items-center space-x-2 bg-gray-50/50 px-3 py-1.5 rounded-lg border border-gray-100 hover:border-black/10 transition-colors cursor-pointer"
+                                              onClick={() => toggleAddon(item.id, addon)}
+                                            >
+                                              <Checkbox
+                                                id={`addon-${item.id}-${addon.name}`}
+                                                checked={!!item.selectedAddons?.find(a => a.name === addon.name)}
+                                                onCheckedChange={() => toggleAddon(item.id, addon)}
+                                                className="data-[state=checked]:bg-black data-[state=checked]:border-black"
+                                              />
+                                              <label
+                                                htmlFor={`addon-${item.id}-${addon.name}`}
+                                                className="text-[10px] font-bold text-gray-600 cursor-pointer"
+                                              >
+                                                {addon.name} (+{currency === 'INR' ? '₹' : '$'}{addon.price.toLocaleString()})
+                                              </label>
+                                            </div>
+                                          ))}
                                         </div>
-                                      ))}
-                                    </div>
-                                  )}
+                                      </div>
+                                    )}
+
+                                    {/* ✅ FIX: Extra Line Items — read from sourceProduct.line_items (same pattern as addons) */}
+                                    {sourceProduct?.line_items && sourceProduct.line_items.length > 0 && (
+                                      <div className="space-y-2">
+                                        <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Extra Line Items</p>
+                                        <div className="flex flex-col gap-2">
+                                          {sourceProduct.line_items.map((li, idx) => (
+                                            <div
+                                              key={idx}
+                                              className="flex items-center space-x-2 bg-gray-50/50 px-3 py-1.5 rounded-lg border border-gray-100 hover:border-black/10 transition-colors cursor-pointer"
+                                              onClick={() => toggleLineItem(item.id, li)}
+                                            >
+                                              <Checkbox
+                                                id={`lineitem-${item.id}-${idx}`}
+                                                checked={!!item.selectedLineItems?.find(l => l.description === li.description)}
+                                                onCheckedChange={() => toggleLineItem(item.id, li)}
+                                                className="data-[state=checked]:bg-black data-[state=checked]:border-black"
+                                              />
+                                              <label
+                                                htmlFor={`lineitem-${item.id}-${idx}`}
+                                                className="flex-1 flex items-center justify-between text-[10px] font-bold text-gray-600 cursor-pointer"
+                                              >
+                                                <span>{li.description}</span>
+                                                <span className="ml-4 shrink-0">
+                                                  {li.price > 0
+                                                    ? `+${currency === 'INR' ? '₹' : '$'}${Number(li.price).toLocaleString()}`
+                                                    : 'Included'}
+                                                </span>
+                                              </label>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Input
-                                type="number"
-                                className="mx-auto h-10 w-20 rounded-xl border-gray-100 bg-gray-50/50 text-center font-bold focus:bg-white"
-                                value={item.qty}
-                                onChange={(e) => {
-                                  const value = e.target.value
-                                  updateItem(item.id, {
-                                    qty: value === "" ? 0 : parseInt(value) || 0
-                                  })
-                                }}
-                                onBlur={() => {
-                                  if (item.qty < 1) {
-                                    updateItem(item.id, { qty: 1 })
-                                  }
-                                }}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <div className="space-y-1.5">
-                                <div className="relative">
-                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">
-                                    {currency === 'INR' ? '₹' : '$'}
-                                  </span>
-                                  <Input
-                                    type="number"
-                                    className="h-10 w-full rounded-xl bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white transition-all border-gray-100"
-                                    value={item.price}
-                                    onChange={(e) => {
-                                      const value = e.target.value
-                                      updateItem(item.id, {
-                                        price: value === "" ? 0 : Number(value)
-                                      })
-                                    }}
-                                    onBlur={() => {
-                                      if (item.price < item.base_price) {
-                                        toast.error("Price adjusted to minimum allowed", { duration: 2000 })
-                                        updateItem(item.id, { price: item.base_price })
-                                      }
-                                    }}
-                                  />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  className="mx-auto h-10 w-20 rounded-xl border-gray-100 bg-gray-50/50 text-center font-bold focus:bg-white"
+                                  value={item.qty}
+                                  onChange={(e: any) => {
+                                    const value = e.target.value
+                                    updateItem(item.id, { qty: value === "" ? 0 : parseInt(value) || 0 })
+                                  }}
+                                  onBlur={() => {
+                                    if (item.qty < 1) updateItem(item.id, { qty: 1 })
+                                  }}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="space-y-1.5">
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">
+                                      {currency === 'INR' ? '₹' : '$'}
+                                    </span>
+                                    <Input
+                                      type="number"
+                                      className="h-10 w-full rounded-xl bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white transition-all border-gray-100"
+                                      value={item.price}
+                                      onChange={(e: any) => {
+                                        const value = e.target.value
+                                        updateItem(item.id, { price: value === "" ? 0 : Number(value) })
+                                      }}
+                                      onBlur={() => {
+                                        if (item.price < item.base_price) {
+                                          toast.error("Price adjusted to minimum allowed", { duration: 2000 })
+                                          updateItem(item.id, { price: item.base_price })
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="text-right text-[9px] font-bold">
+                                    <span className="text-green-600">
+                                      Suggested: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
+                                    </span>
+                                  </div>
                                 </div>
-                                <div className="text-right text-[9px] font-bold">
-                                  <span className="text-green-600">
-                                    Suggested: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
-                                  </span>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right text-sm font-black text-black">
-                              {currency === 'INR' ? '₹' : '$'}{((item.price + (item.selectedAddons?.reduce((s, a) => s + a.price, 0) || 0)) * item.qty).toLocaleString()}
-                            </TableCell>
-                            <TableCell className="px-8">
-                              <button
-                                onClick={() => removeItem(item.id)}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-200 hover:bg-red-50 hover:text-red-500 transition-all"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </TableCell>
-                          </TableRow>
-                        ))
+                              </TableCell>
+                              <TableCell className="text-right text-sm font-black text-black">
+                                {currency === 'INR' ? '₹' : '$'}{((item.price + (item.selectedAddons?.reduce((s, a) => s + a.price, 0) || 0) + (item.selectedLineItems?.reduce((s, l) => s + l.price, 0) || 0)) * item.qty).toLocaleString()}
+                              </TableCell>
+                              <TableCell className="px-8">
+                                <button
+                                  onClick={() => removeItem(item.id)}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-all"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })
                       )}
                     </TableBody>
                   </Table>
@@ -910,134 +972,133 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                         Add products to build your quotation
                       </div>
                     ) : (
-                      items.map((item) => (
-                        <div key={item.id} className="relative flex flex-col gap-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-                          <div className="flex items-start gap-4">
-                            <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-gray-100 bg-white">
-                              {item.image_url && <Image src={item.image_url} alt={item.name} fill className="object-contain p-2" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="pr-8">
-                                <p className="text-sm font-black text-black uppercase tracking-tight truncate">{item.name}</p>
-                                <p className="text-xs text-gray-400 line-clamp-2 mt-1">{item.description}</p>
+                      items.map((item) => {
+                        const sourceProduct = initialProducts.find(p => p.id === item.product_id)
+                        return (
+                          <div key={item.id} className="relative flex flex-col gap-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+                            <div className="flex items-start gap-4">
+                              <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-gray-100 bg-white">
+                                {item.image_url && <Image src={item.image_url} alt={item.name} fill className="object-contain p-2" />}
                               </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="pr-8">
+                                  <p className="text-sm font-black text-black uppercase tracking-tight truncate">{item.name}</p>
+                                  <p className="text-xs text-gray-400 line-clamp-2 mt-1">{item.description}</p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removeItem(item.id)}
+                                className="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-all"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
                             </div>
-                            <button
-                              onClick={() => removeItem(item.id)}
-                              className="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-lg text-gray-200 hover:bg-red-50 hover:text-red-500 transition-all"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
 
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                              <Label className="text-[10px] font-bold uppercase text-gray-400">Qty</Label>
-                              <Input
-                                type="number"
-                                className="h-10 w-full rounded-xl border-gray-100 bg-gray-50/50 text-center font-bold focus:bg-white"
-                                value={item.qty}
-                                onChange={(e) => {
-                                  const value = e.target.value
-                                  updateItem(item.id, {
-                                    qty: value === "" ? 0 : parseInt(value) || 0
-                                  })
-                                }}
-                                onBlur={() => {
-                                  if (item.qty < 1) {
-                                    updateItem(item.id, { qty: 1 })
-                                  }
-                                }}
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <Label className="text-[10px] font-bold uppercase text-gray-400">Selling Price</Label>
-                              <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">
-                                  {currency === 'INR' ? '₹' : '$'}
-                                </span>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-1">
+                                <Label className="text-[10px] font-bold uppercase text-gray-400">Qty</Label>
                                 <Input
                                   type="number"
-                                  className="h-10 w-full rounded-xl bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white transition-all border-gray-100"
-                                  value={item.price}
-                                  onChange={(e) => {
+                                  className="h-10 w-full rounded-xl border-gray-100 bg-gray-50/50 text-center font-bold focus:bg-white"
+                                  value={item.qty}
+                                  onChange={(e: any) => {
                                     const value = e.target.value
-                                    updateItem(item.id, {
-                                      price: value === "" ? 0 : Number(value)
-                                    })
+                                    updateItem(item.id, { qty: value === "" ? 0 : parseInt(value) || 0 })
                                   }}
                                   onBlur={() => {
-                                    if (item.price < item.base_price) {
-                                      toast.error("Price adjusted to minimum allowed", { duration: 2000 })
-                                      updateItem(item.id, { price: item.base_price })
-                                    }
+                                    if (item.qty < 1) updateItem(item.id, { qty: 1 })
                                   }}
                                 />
                               </div>
-                            </div>
-                          </div>
-
-                          <div className="flex justify-end text-[9px] font-bold pt-2 border-t border-gray-50">
-                            <span className="text-green-600">
-                              Suggested MRP: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
-                            </span>
-                          </div>
-
-                          {initialProducts.find(p => p.id === item.product_id)?.addons && (initialProducts.find(p => p.id === item.product_id)?.addons?.length || 0) > 0 && (
-                            <div className="space-y-2 pt-2 border-t border-gray-50">
-                              <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Addons</p>
-                              <div className="flex flex-col gap-2">
-                                {initialProducts.find(p => p.id === item.product_id)?.addons?.map((addon) => (
-                                  <div
-                                    key={addon.name}
-                                    className={`flex items-center space-x-2 px-3 py-2 rounded-lg border transition-colors cursor-pointer ${item.selectedAddons?.find(a => a.name === addon.name)
-                                      ? 'bg-black text-white border-black'
-                                      : 'bg-gray-50 border-gray-100 text-gray-600'
-                                      }`}
-                                    onClick={() => toggleAddon(item.id, addon)}
-                                  >
-                                    <span className="text-[10px] font-bold">
-                                      {addon.name} (+{currency === 'INR' ? '₹' : '$'}{addon.price.toLocaleString()})
-                                    </span>
-                                  </div>
-                                ))}
+                              <div className="space-y-1">
+                                <Label className="text-[10px] font-bold uppercase text-gray-400">Selling Price</Label>
+                                <div className="relative">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">
+                                    {currency === 'INR' ? '₹' : '$'}
+                                  </span>
+                                  <Input
+                                    type="number"
+                                    className="h-10 w-full rounded-xl bg-gray-50/50 pl-6 pr-2 font-bold focus:bg-white transition-all border-gray-100"
+                                    value={item.price}
+                                    onChange={(e: any) => {
+                                      const value = e.target.value
+                                      updateItem(item.id, { price: value === "" ? 0 : Number(value) })
+                                    }}
+                                    onBlur={() => {
+                                      if (item.price < item.base_price) {
+                                        toast.error("Price adjusted to minimum allowed", { duration: 2000 })
+                                        updateItem(item.id, { price: item.base_price })
+                                      }
+                                    }}
+                                  />
+                                </div>
                               </div>
                             </div>
-                          )}
 
-                          {/* Extra Line Items Toggle */}
-                          {initialProducts.find(p => p.id === item.product_id)?.line_items && (initialProducts.find(p => p.id === item.product_id)?.line_items?.length || 0) > 0 && (
-                            <div className="space-y-2 pt-2 border-t border-gray-50">
-                              <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Extra Line Items</p>
-                              <div className="flex flex-col gap-2">
-                                {initialProducts.find(p => p.id === item.product_id)?.line_items?.map((li: any, idx: number) => (
-                                  <div
-                                    key={idx}
-                                    className={`flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-                                      item.selectedLineItems?.find((l: any) => l.description === li.description)
+                            <div className="flex justify-end text-[9px] font-bold pt-2 border-t border-gray-50">
+                              <span className="text-green-600">
+                                Suggested MRP: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString()}
+                              </span>
+                            </div>
+
+                            {/* Addons — mobile */}
+                            {sourceProduct?.addons && sourceProduct.addons.length > 0 && (
+                              <div className="space-y-2 pt-2 border-t border-gray-50">
+                                <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Addons</p>
+                                <div className="flex flex-col gap-2">
+                                  {sourceProduct.addons.map((addon) => (
+                                    <div
+                                      key={addon.name}
+                                      className={`flex items-center space-x-2 px-3 py-2 rounded-lg border transition-colors cursor-pointer ${item.selectedAddons?.find(a => a.name === addon.name)
                                         ? 'bg-black text-white border-black'
                                         : 'bg-gray-50 border-gray-100 text-gray-600'
-                                    }`}
-                                    onClick={() => toggleLineItem(item.id, li)}
-                                  >
-                                    <span className="text-[10px] font-bold">{li.description}</span>
-                                    <span className="text-[10px] font-bold ml-2">
-                                      {li.price > 0 ? `${currency === 'INR' ? '₹' : '$'}${Number(li.price).toLocaleString()}` : 'Included'}
-                                    </span>
-                                  </div>
-                                ))}
+                                        }`}
+                                      onClick={() => toggleAddon(item.id, addon)}
+                                    >
+                                      <span className="text-[10px] font-bold">
+                                        {addon.name} (+{currency === 'INR' ? '₹' : '$'}{addon.price.toLocaleString()})
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            )}
 
-                          <div className="flex items-center justify-between pt-2 border-t border-gray-50">
-                            <span className="text-xs font-bold text-gray-400 uppercase">Subtotal</span>
-                            <span className="text-lg font-black text-black">
-                              {currency === 'INR' ? '₹' : '$'}{((item.price + (item.selectedAddons?.reduce((s, a) => s + a.price, 0) || 0)) * item.qty).toLocaleString()}
-                            </span>
+                            {/* ✅ FIX: Extra Line Items — mobile, read from sourceProduct.line_items */}
+                            {sourceProduct?.line_items && sourceProduct.line_items.length > 0 && (
+                              <div className="space-y-2 pt-2 border-t border-gray-50">
+                                <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Extra Line Items</p>
+                                <div className="flex flex-col gap-2">
+                                  {sourceProduct.line_items.map((li, idx) => (
+                                    <div
+                                      key={idx}
+                                      className={`flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-colors ${item.selectedLineItems?.find(l => l.description === li.description)
+                                        ? 'bg-black text-white border-black'
+                                        : 'bg-gray-50 border-gray-100 text-gray-600'
+                                        }`}
+                                      onClick={() => toggleLineItem(item.id, li)}
+                                    >
+                                      <span className="text-[10px] font-bold">{li.description}</span>
+                                      <span className="text-[10px] font-bold ml-2">
+                                        {li.price > 0
+                                          ? `${currency === 'INR' ? '₹' : '$'}${Number(li.price).toLocaleString()}`
+                                          : 'Included'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-between pt-2 border-t border-gray-50">
+                              <span className="text-xs font-bold text-gray-400 uppercase">Subtotal</span>
+                              <span className="text-lg font-black text-black">
+                                {currency === 'INR' ? '₹' : '$'}{((item.price + (item.selectedAddons?.reduce((s, a) => s + a.price, 0) || 0) + (item.selectedLineItems?.reduce((s, l) => s + l.price, 0) || 0)) * item.qty).toLocaleString()}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        )
+                      })
                     )}
                   </div>
                 </div>
@@ -1057,7 +1118,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                           type="number"
                           className="h-8 w-28 rounded-lg border-gray-200 bg-white pl-7 pr-2 text-right font-bold text-black"
                           value={discount}
-                          onChange={(e) => {
+                          onChange={(e: any) => {
                             const value = e.target.value
                             setDiscount(value === "" ? 0 : parseFloat(value) || 0)
                           }}
@@ -1075,50 +1136,78 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
               )}
             </Card>
 
-            {/* Terms & Conditions Section */}
+            {/* ── Terms & Conditions ──────────────────────────────────────────── */}
             <Card className="border-none bg-white shadow-sm ring-1 ring-gray-100 rounded-2xl overflow-hidden">
               <CardHeader className="border-b border-gray-50 p-6">
                 <CardTitle className="text-sm font-black uppercase tracking-widest text-gray-400">Terms & Conditions</CardTitle>
               </CardHeader>
               <CardContent className="p-6">
-                <div className="space-y-4">
-                  {terms.map((term) => {
-                    const isWarrantyTerm = WARRANTY_TERMS.includes(term.text)
-                    const displayText = term.text
+                <div className="space-y-1">
 
-                    return (
-                      <div key={term.id}>
-                        {/* Add warranty group header before the first warranty option */}
-                        {term.text === "WARRANTY: One year warranty from the date of dispatch" && (
-                          <div className="mb-2">
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">
-                              Warranty Options (Select One)
-                            </p>
-                          </div>
-                        )}
+                  {/* Non-warranty terms — normal checkboxes */}
+                  {nonWarrantyTerms.map((term) => (
+                    <div
+                      key={term.id}
+                      className="flex items-start space-x-3 p-3 rounded-xl hover:bg-gray-50/50 transition-colors group cursor-pointer"
+                      onClick={() => toggleTerm(term.id)}
+                    >
+                      <Checkbox
+                        id={term.id}
+                        checked={term.selected}
+                        onCheckedChange={() => toggleTerm(term.id)}
+                        className="mt-0.5 data-[state=checked]:bg-black data-[state=checked]:border-black"
+                      />
+                      <Label
+                        htmlFor={term.id}
+                        className="text-sm font-medium leading-relaxed text-gray-600 group-hover:text-black transition-colors cursor-pointer"
+                      >
+                        {term.text}
+                      </Label>
+                    </div>
+                  ))}
 
-                        <div
-                          className={`flex items-start space-x-3 p-3 rounded-xl hover:bg-gray-50/50 transition-colors group cursor-pointer ${isWarrantyTerm ? 'ml-4 border-l-2 border-green-500/20' : ''
-                            }`}
-                          onClick={() => toggleTerm(term.id)}
-                        >
-                          <Checkbox
-                            id={term.id}
-                            checked={term.selected}
-                            onCheckedChange={() => toggleTerm(term.id)}
-                            className="mt-1 data-[state=checked]:bg-black data-[state=checked]:border-black"
-                          />
-                          <Label
-                            htmlFor={term.id}
-                            className={`text-sm font-medium leading-relaxed group-hover:text-black transition-colors cursor-pointer ${isWarrantyTerm ? 'text-gray-700' : 'text-gray-600'
-                              }`}
+                  {/* Warranty — radio group, shows only text after ":" */}
+                  <div className="pt-4">
+                    {/* Header row: "Warranty:" label + currently selected value */}
+                    <div className="flex items-baseline gap-2 px-3 mb-2">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                        Warranty:
+                      </span>
+                      <span className="text-[10px] font-bold text-black">
+                        {selectedWarrantyLabel}
+                      </span>
+                    </div>
+
+                    {/* Radio options */}
+                    <div className="ml-4 border-l-2 border-gray-100 pl-4 flex flex-col gap-1">
+                      {warrantyTerms.map((term) => {
+                        const label = term.text.split(':').slice(1).join(':').trim()
+                        return (
+                          <div
+                            key={term.id}
+                            className="flex items-center space-x-3 p-2.5 rounded-xl hover:bg-gray-50/50 transition-colors cursor-pointer group"
+                            onClick={() => toggleTerm(term.id)}
                           >
-                            {displayText}
-                          </Label>
-                        </div>
-                      </div>
-                    )
-                  })}
+                            <input
+                              type="radio"
+                              id={term.id}
+                              name="warrantyGroup"
+                              checked={term.selected}
+                              onChange={() => toggleTerm(term.id)}
+                              className="h-4 w-4 border-gray-300 focus:ring-black cursor-pointer accent-black"
+                            />
+                            <Label
+                              htmlFor={term.id}
+                              className="text-sm font-medium leading-relaxed text-gray-600 group-hover:text-black transition-colors cursor-pointer"
+                            >
+                              {label}
+                            </Label>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
                 </div>
               </CardContent>
             </Card>
@@ -1126,6 +1215,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
             {/* Download PDF Button */}
             <div className="flex justify-center pt-4">
               <Button
+                suppressHydrationWarning
                 disabled={saving}
                 onClick={handleDownload}
                 className="h-14 w-full max-w-md rounded-xl bg-black px-8 font-bold text-white shadow-xl shadow-black/20 hover:bg-black/90 active:scale-95 transition-all"
