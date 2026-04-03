@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Plus, Search, Edit2, Trash2, Power, PowerOff, Upload, X } from "lucide-react"
 import { toast } from "sonner"
 import Image from "next/image"
@@ -39,6 +39,8 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const isMutating = useRef(false)
+  const isUploading = useRef(false)
 
   // Sync local state when server re-renders with new initialProducts
   useEffect(() => {
@@ -52,6 +54,8 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isMutating.current) return
+    isMutating.current = true
     setSaving(true)
     try {
       const dataToSave = { ...formData, price: Number(formData.price), tax_percent: Number(formData.tax_percent) }
@@ -72,13 +76,16 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
       resetForm()
       router.refresh()
     } catch (err: any) {
-      toast.error(err.message)
+      toast.error(err.message || 'Something went wrong.')
     } finally {
+      isMutating.current = false
       setSaving(false)
     }
   }
 
   const handleToggleStatus = async (product: Product) => {
+    if (isMutating.current) return
+    isMutating.current = true
     try {
       const newActive = !product.active
       const { error } = await supabase.from("products").update({ active: newActive }).eq("id", product.id)
@@ -89,11 +96,15 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
       router.refresh()
     } catch (err: any) {
       toast.error(err.message)
+    } finally {
+      isMutating.current = false
     }
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure?")) return
+    if (isMutating.current) return
+    isMutating.current = true
     try {
       const { error } = await supabase.from("products").delete().eq("id", id)
       if (error) throw error
@@ -103,16 +114,19 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
       router.refresh()
     } catch (err: any) {
       toast.error(err.message)
+    } finally {
+      isMutating.current = false
     }
   }
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (!file || isUploading.current) return
+    isUploading.current = true
     setUploading(true)
     try {
       const fileExt = file.name.split(".").pop()
-      const fileName = `${Math.random()}.${fileExt}`
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
       
       const { error: uploadError } = await supabase.storage.from("products").upload(fileName, file)
       if (uploadError) throw uploadError
@@ -120,8 +134,9 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
       setFormData({ ...formData, image_url: publicUrl })
       toast.success("Image uploaded")
     } catch (err: any) {
-      toast.error(err.message)
+      toast.error(err.message || 'Upload failed')
     } finally {
+      isUploading.current = false
       setUploading(false)
     }
   }

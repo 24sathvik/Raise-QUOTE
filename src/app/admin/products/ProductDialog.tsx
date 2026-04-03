@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -56,6 +56,7 @@ interface Product {
 export default function ProductDialog({ product }: { product?: Product }) {
   const [open, setOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const isMutating = useRef(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(product?.image_url || null)
   const [specs, setSpecs] = useState<Spec[]>(product?.specs || [])
   const [addons, setAddons] = useState<{ name: string; price: number; moc?: string; qty?: string; active?: boolean }[]>(product?.addons || [])
@@ -64,6 +65,8 @@ export default function ProductDialog({ product }: { product?: Product }) {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (isMutating.current) return
+    isMutating.current = true
     setIsLoading(true)
 
     const form = e.currentTarget
@@ -89,9 +92,7 @@ export default function ProductDialog({ product }: { product?: Product }) {
         .upload(filePath, file)
 
       if (uploadError) {
-        toast.error("Image upload failed: " + uploadError.message)
-        setIsLoading(false)
-        return
+        throw new Error("Image upload failed: " + uploadError.message)
       }
 
       const { data: { publicUrl } } = supabase.storage
@@ -121,10 +122,10 @@ export default function ProductDialog({ product }: { product?: Product }) {
         setOpen(false)
         router.refresh()
       }
-    } catch (error) {
-      console.error(error)
-      toast.error("Something went wrong. Please try again.")
+    } catch (error: any) {
+      toast.error(error.message || "Something went wrong. Please try again.")
     } finally {
+      isMutating.current = false
       setIsLoading(false)
     }
   }

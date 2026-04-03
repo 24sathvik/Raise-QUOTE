@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Plus, Search, MoreHorizontal, Power, PowerOff, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
@@ -30,6 +30,8 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [formData, setFormData] = useState({ name: "", email: "", password: "", role: "sales", phone: "" })
+  const isMutating = useRef(false)
+  const [saving, setSaving] = useState(false)
 
   // Keep local state in sync if initialUsers prop changes (e.g., server re-render)
   useEffect(() => {
@@ -43,6 +45,9 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
+    if (isMutating.current) return
+    isMutating.current = true
+    setSaving(true)
     try {
       const res = await fetch('/api/admin/users', {
         method: 'POST',
@@ -77,32 +82,45 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
       router.refresh()
     } catch (error: any) {
       toast.error(error.message)
+    } finally {
+      isMutating.current = false
+      setSaving(false)
     }
   }
 
   async function handleToggle(user: Profile) {
-    const newActive = !user.active
-    const { error } = await supabase.from("profiles").update({ active: newActive }).eq("id", user.id)
-    if (error) {
-      toast.error(error.message)
-    } else {
+    if (isMutating.current) return
+    isMutating.current = true
+    try {
+      const newActive = !user.active
+      const { error } = await supabase.from("profiles").update({ active: newActive }).eq("id", user.id)
+      if (error) throw error
       // Update local state immediately (Safari-safe)
       setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, active: newActive } : u))
       toast.success("User status updated")
       router.refresh()
+    } catch (err: any) {
+      toast.error(err.message)
+    } finally {
+      isMutating.current = false
     }
   }
 
   async function handleDelete(user: Profile) {
     if (!confirm(`Delete ${user.full_name}? This cannot be undone.`)) return
-    const { error } = await supabase.from("profiles").delete().eq("id", user.id)
-    if (error) {
-      toast.error(error.message)
-    } else {
+    if (isMutating.current) return
+    isMutating.current = true
+    try {
+      const { error } = await supabase.from("profiles").delete().eq("id", user.id)
+      if (error) throw error
       // Remove from local state immediately (Safari-safe)
       setUsers((prev) => prev.filter((u) => u.id !== user.id))
       toast.success("User deleted")
       router.refresh()
+    } catch (err: any) {
+      toast.error(err.message)
+    } finally {
+      isMutating.current = false
     }
   }
 
@@ -144,7 +162,9 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
                 </Select>
               </div>
               <DialogFooter>
-                <button type="submit" className="w-full rounded-xl bg-black py-3 text-white font-bold">Create User</button>
+                <button type="submit" disabled={saving} className="w-full rounded-xl bg-black py-3 text-white font-bold disabled:opacity-50 transition-opacity">
+                  {saving ? "Saving..." : "Create User"}
+                </button>
               </DialogFooter>
             </form>
           </DialogContent>

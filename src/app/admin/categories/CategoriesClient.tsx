@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Plus, Search, Trash2, Edit2, Layers } from "lucide-react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
@@ -22,9 +22,14 @@ export default function CategoriesClient({ initialCategories }: { initialCategor
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null)
   const [name, setName] = useState("")
+  const isMutating = useRef(false)
+  const [saving, setSaving] = useState(false)
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isMutating.current) return
+    isMutating.current = true
+    setSaving(true)
     try {
       if (selectedCategory) {
         const { error } = await supabase.from("categories").update({ name }).eq("id", selectedCategory.id)
@@ -38,21 +43,28 @@ export default function CategoriesClient({ initialCategories }: { initialCategor
       setIsDialogOpen(false)
       setName("")
       setSelectedCategory(null)
-      router.refresh() // ✅ re-runs server component to get fresh data
+      router.refresh() // ✅ re-runs server component to get fresh data only on success
     } catch (err: any) {
-      toast.error(err.message)
+      toast.error(err.message || 'Something went wrong.')
+    } finally {
+      isMutating.current = false
+      setSaving(false)
     }
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure? Products in this category will not be deleted but will lose their category association.")) return
+    if (isMutating.current) return
+    isMutating.current = true
     try {
       const { error } = await supabase.from("categories").delete().eq("id", id)
       if (error) throw error
       toast.success("Category deleted successfully")
       router.refresh()
     } catch (err: any) {
-      toast.error(err.message)
+      toast.error(err.message || 'Something went wrong.')
+    } finally {
+      isMutating.current = false
     }
   }
 
@@ -90,8 +102,8 @@ export default function CategoriesClient({ initialCategories }: { initialCategor
                   placeholder="e.g. Cleanroom Equipment" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
               <DialogFooter>
-                <button type="submit" className="w-full rounded-xl bg-black py-4 text-sm font-bold text-white shadow-xl shadow-black/20 transition-all hover:bg-black/90 active:scale-95">
-                  {selectedCategory ? "Update Category" : "Create Category"}
+                <button type="submit" disabled={saving} className="w-full rounded-xl bg-black py-4 text-sm font-bold text-white shadow-xl shadow-black/20 transition-all hover:bg-black/90 active:scale-95 disabled:opacity-50">
+                  {saving ? "Saving..." : selectedCategory ? "Update Category" : "Create Category"}
                 </button>
               </DialogFooter>
             </form>

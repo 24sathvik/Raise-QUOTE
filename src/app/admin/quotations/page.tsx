@@ -26,7 +26,9 @@ export default async function QuotationsPage(props: { searchParams: Promise<{ [k
     query = query.eq('status', searchParams.status)
   }
 
-  const { data: quotations } = await query.order("created_at", { ascending: false }).limit(100)
+  const [{ data: quotations }] = await Promise.all([
+    query.order("created_at", { ascending: false }).limit(100)
+  ])
 
   const activeFilters = {
     month: searchParams.month,

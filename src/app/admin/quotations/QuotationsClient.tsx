@@ -1,13 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Search, Calendar, User, Download, ChevronDown, ArrowUp, ArrowDown, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { createClient } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
@@ -46,12 +46,12 @@ const statusLabels: Record<QuotationStatus, string> = {
 export default function QuotationsClient({ initialQuotations, activeFilters }: { initialQuotations: Quotation[], activeFilters?: { month?: string, year?: string, status?: string } }) {
   const [search, setSearch] = useState("")
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const isMutating = useRef(false)
   
   const [sortField, setSortField] = useState<'created_at' | 'grand_total' | 'status' | 'customer_name' | 'salesperson'>('created_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
   const router = useRouter()
-  const supabase = createClient()
 
   const filtered = initialQuotations.filter(
     (q) =>
@@ -103,6 +103,8 @@ export default function QuotationsClient({ initialQuotations, activeFilters }: {
     : null
 
   const handleStatusChange = async (id: string, newStatus: QuotationStatus) => {
+    if (isMutating.current) return
+    isMutating.current = true
     setUpdatingId(id)
     try {
       const { error } = await supabase
@@ -114,10 +116,10 @@ export default function QuotationsClient({ initialQuotations, activeFilters }: {
       
       toast.success("Status updated successfully")
       router.refresh()
-    } catch (error) {
-      console.error(error)
-      toast.error("Failed to update status")
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update status")
     } finally {
+      isMutating.current = false
       setUpdatingId(null)
     }
   }

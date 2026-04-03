@@ -1,305 +1,40 @@
 import { createClient } from '@supabase/supabase-js'
-import { NextResponse } from 'next/server'
-import { createClient as createServerClient } from '@/lib/supabase/server'
+import { NextRequest, NextResponse } from 'next/server'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
-export const runtime = 'nodejs'
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!, // service role — never expose client-side
+  { auth: { autoRefreshToken: false, persistSession: false } }
+)
 
-export async function GET(request: Request) {
-  const supabase = await createServerClient()
-  let { data: { user } } = await supabase.auth.getUser()
-
-  // Fallback: Check Authorization header
-  if (!user) {
-    const authHeader = request.headers.get('Authorization')
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '')
-      // Use a FRESH stateless client to verify token, bypassing any cookie issues
-      const supabasePure = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-          auth: {
-            persistSession: false
-          }
-        }
-      )
-      const { data: { user: authUser } } = await supabasePure.auth.getUser(token)
-      user = authUser
-    }
-  }
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  // Use service role client for role check since RLS is disabled
-  const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    }
-  )
-
-  const { data: profile } = await supabaseAdmin
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (profile?.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
-
-  const { data: users, error } = await supabaseAdmin
-    .from('profiles')
-    .select('id, name:full_name, email, role, active, created_at, phone')
-    .order('created_at', { ascending: false })
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 })
-  }
-
-  return NextResponse.json(users)
-}
-
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const supabase = await createServerClient()
-    let { data: { user } } = await supabase.auth.getUser()
-
-    // Fallback: Check Authorization header
-    if (!user) {
-      const authHeader = request.headers.get('Authorization')
-      if (authHeader) {
-        const token = authHeader.replace('Bearer ', '')
-        const supabasePure = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
-        const { data: { user: authUser } } = await supabasePure.auth.getUser(token)
-        user = authUser
-      }
-    }
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const body = await request.json()
-    const { email, password, name, role, phone } = body
-
-    // Use service role client for role check since RLS is disabled
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    )
-
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profile?.role !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const body = await req.json()
+    const { email, password, phone, role } = body
+    const full_name = body.full_name || body.name
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
-      user_metadata: { full_name: name, role, phone }
+      user_metadata: { name: full_name }
     })
 
-    if (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 400 })
-    }
-
-    const { error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .insert({
-        id: authData.user.id,
-        full_name: name,
-        email,
-        role,
-        phone,
-        active: true
-      })
-
-    if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 400 })
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
-  }
-}
-
-export async function PATCH(request: Request) {
-  try {
-    const supabase = await createServerClient()
-    let { data: { user } } = await supabase.auth.getUser()
-
-    // Fallback: Check Authorization header
-    if (!user) {
-      const authHeader = request.headers.get('Authorization')
-      if (authHeader) {
-        const token = authHeader.replace('Bearer ', '')
-        const supabasePure = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
-        const { data: { user: authUser } } = await supabasePure.auth.getUser(token)
-        user = authUser
-      }
-    }
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const body = await request.json()
-    const { id, active, password, name, role, phone } = body
-
-    // Use service role client for role check since RLS is disabled
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    )
-
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profile?.role !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    if (password) {
-      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
-        password
-      })
-      if (authError) return NextResponse.json({ error: authError.message }, { status: 400 })
-    }
-
-    if (active !== undefined || name !== undefined || role !== undefined || phone !== undefined) {
-      const updateData: any = {}
-      if (active !== undefined) updateData.active = active
-      if (name !== undefined) updateData.full_name = name
-      if (role !== undefined) updateData.role = role
-      if (phone !== undefined) updateData.phone = phone
-
-      const { error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .update(updateData)
-        .eq('id', id)
-
-      if (profileError) return NextResponse.json({ error: profileError.message }, { status: 400 })
-
-      // Sync role to user_metadata
-      if (role || name || phone) {
-        const metadataUpdates: any = {}
-        if (role) metadataUpdates.role = role
-        if (name) metadataUpdates.full_name = name
-        if (phone) metadataUpdates.phone = phone
-
-        await supabaseAdmin.auth.admin.updateUserById(id, {
-          user_metadata: metadataUpdates
-        })
-      }
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
-  }
-}
-
-export async function DELETE(request: Request) {
-  try {
-    const supabase = await createServerClient()
-    let { data: { user } } = await supabase.auth.getUser()
-
-    // Fallback: Check Authorization header
-    if (!user) {
-      const authHeader = request.headers.get('Authorization')
-      if (authHeader) {
-        const token = authHeader.replace('Bearer ', '')
-        const supabasePure = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
-        const { data: { user: authUser } } = await supabasePure.auth.getUser(token)
-        user = authUser
-      }
-    }
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
-
-    if (!id) {
-      return NextResponse.json({ error: 'Missing ID' }, { status: 400 })
-    }
-
-    // Use service role client for role check since RLS is disabled
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    )
-
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profile?.role !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id)
     if (authError) return NextResponse.json({ error: authError.message }, { status: 400 })
 
-    const { error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .delete()
-      .eq('id', id)
+    const { error: profileError } = await supabaseAdmin.from('profiles').insert({
+      id: authData.user.id,
+      full_name,
+      email,
+      phone,
+      role,
+      active: true,
+    })
 
     if (profileError) return NextResponse.json({ error: profileError.message }, { status: 400 })
 
-    return NextResponse.json({ success: true })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ success: true, id: authData.user.id })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
