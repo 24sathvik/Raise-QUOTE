@@ -8,13 +8,12 @@ import Image from "next/image"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { createClient } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase/client"
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const supabase = createClient()
 
   useEffect(() => {
     fetchSettings()

@@ -54,7 +54,7 @@ import {
   Badge
 } from "@/components/ui/badge"
 import { generateQuotationPDF } from "@/lib/pdf-service"
-import { createClient } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase/client"
 
 // 🔥 MARGIN CONFIGURATION
 const MARGIN_PERCENTAGE = 50 // Sales sees 30% markup over base price
@@ -157,7 +157,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   )
   const [currency, setCurrency] = useState<Currency>('INR')
 
-  const supabase = useMemo(() => createClient(), [])
 
   // Fetch next sequential quotation number
   useEffect(() => {

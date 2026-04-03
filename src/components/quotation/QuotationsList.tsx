@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { createClient } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase/client"
 
 interface Quotation {
   id: string
@@ -34,7 +34,6 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
   const [refreshing, setRefreshing] = useState(false)
   const [search, setSearch] = useState("")
 
-  const supabase = createClient()
 
   useEffect(() => {
     fetchQuotations()
