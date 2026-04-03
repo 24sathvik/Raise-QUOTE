@@ -11,7 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { supabase } from "@/lib/supabase/client"
+import { createSalesperson, toggleUserStatus, deleteUser } from "./actions"
 
 interface Profile {
   id: string
@@ -33,7 +33,6 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
   const isMutating = useRef(false)
   const [saving, setSaving] = useState(false)
 
-  // Keep local state in sync if initialUsers prop changes (e.g., server re-render)
   useEffect(() => {
     setUsers(initialUsers)
   }, [initialUsers])
@@ -49,36 +48,19 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
     isMutating.current = true
     setSaving(true)
     try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-          name: formData.name,
-          role: formData.role,
-          phone: formData.phone
-        })
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to create user')
+      const fd = new FormData()
+      fd.append('email', formData.email)
+      fd.append('password', formData.password)
+      fd.append('name', formData.name)
+      fd.append('role', formData.role)
+      fd.append('phone', formData.phone)
 
-      // Optimistically add the new user to local state so Safari sees it immediately
-      const newUser: Profile = {
-        id: data.id || `temp-${Date.now()}`,
-        full_name: formData.name,
-        email: formData.email,
-        role: formData.role,
-        active: true,
-        created_at: new Date().toISOString(),
-        phone: formData.phone || null,
-      }
-      setUsers((prev) => [newUser, ...prev])
+      const result = await createSalesperson(fd)
+      if (result?.error) throw new Error(result.error)
 
       toast.success("User created successfully")
       setIsCreateOpen(false)
       setFormData({ name: "", email: "", password: "", role: "sales", phone: "" })
-      // Also trigger server refresh so the correct ID is loaded
       router.refresh()
     } catch (error: any) {
       toast.error(error.message)
@@ -93,12 +75,10 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
     isMutating.current = true
     try {
       const newActive = !user.active
-      const { error } = await supabase.from("profiles").update({ active: newActive }).eq("id", user.id)
-      if (error) throw error
-      // Update local state immediately (Safari-safe)
+      const result = await toggleUserStatus(user.id, newActive)
+      if (result?.error) throw new Error(result.error)
       setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, active: newActive } : u))
       toast.success("User status updated")
-      router.refresh()
     } catch (err: any) {
       toast.error(err.message)
     } finally {
@@ -111,12 +91,10 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
     if (isMutating.current) return
     isMutating.current = true
     try {
-      const { error } = await supabase.from("profiles").delete().eq("id", user.id)
-      if (error) throw error
-      // Remove from local state immediately (Safari-safe)
+      const result = await deleteUser(user.id)
+      if (result?.error) throw new Error(result.error)
       setUsers((prev) => prev.filter((u) => u.id !== user.id))
       toast.success("User deleted")
-      router.refresh()
     } catch (err: any) {
       toast.error(err.message)
     } finally {
@@ -145,13 +123,13 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
             <form onSubmit={handleCreate} className="space-y-6">
               <DialogHeader><DialogTitle>Create New User</DialogTitle></DialogHeader>
               <div className="space-y-2"><Label>Full Name</Label>
-                <Input required onChange={(e) => setFormData({ ...formData, name: e.target.value })} /></div>
+                <Input required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} /></div>
               <div className="space-y-2"><Label>Email</Label>
-                <Input type="email" required onChange={(e) => setFormData({ ...formData, email: e.target.value })} /></div>
+                <Input type="email" required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} /></div>
               <div className="space-y-2"><Label>Phone</Label>
-                <Input required onChange={(e) => setFormData({ ...formData, phone: e.target.value })} /></div>
+                <Input required value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} /></div>
               <div className="space-y-2"><Label>Password</Label>
-                <Input type="password" required onChange={(e) => setFormData({ ...formData, password: e.target.value })} /></div>
+                <Input type="password" required value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} /></div>
               <div className="space-y-2"><Label>Role</Label>
                 <Select defaultValue="sales" onValueChange={(v) => setFormData({ ...formData, role: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>

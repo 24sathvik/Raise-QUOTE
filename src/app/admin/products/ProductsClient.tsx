@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { supabase } from "@/lib/supabase/client"
+import { upsertProduct, deleteProduct, toggleProductStatus } from "./actions"
 
 interface Addon { name: string; price: number; description?: string; active?: boolean; moc?: string; qty?: string }
 interface Spec { key: string; value: string }
@@ -32,7 +33,6 @@ interface Props {
 
 export default function ProductsClient({ initialProducts, initialCategories }: Props) {
   const router = useRouter()
-  // Local state so UI updates immediately on Safari without relying on router.refresh()
   const [products, setProducts] = useState<Product[]>(initialProducts)
   const [search, setSearch] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -42,7 +42,6 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
   const isMutating = useRef(false)
   const isUploading = useRef(false)
 
-  // Sync local state when server re-renders with new initialProducts
   useEffect(() => {
     setProducts(initialProducts)
   }, [initialProducts])
@@ -58,23 +57,34 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
     isMutating.current = true
     setSaving(true)
     try {
-      const dataToSave = { ...formData, price: Number(formData.price), tax_percent: Number(formData.tax_percent) }
+      const result = await upsertProduct({
+        id: selectedProduct?.id,
+        name: formData.name!,
+        description: formData.description || '',
+        price: Number(formData.price),
+        tax_percent: Number(formData.tax_percent),
+        active: formData.active ?? true,
+        image_url: formData.image_url || null,
+        image_format: formData.image_format || 'wide',
+        sku: formData.sku || '',
+        category: formData.category || '',
+        specs: formData.specs || [],
+        addons: formData.addons || [],
+        line_items: formData.line_items || [],
+        features: formData.features || [],
+      })
+
+      if (result?.error) throw new Error(result.error)
+
       if (selectedProduct) {
-        const { error } = await supabase.from("products").update(dataToSave).eq("id", selectedProduct.id)
-        if (error) throw error
-        // Update local state immediately (Safari-safe)
-        setProducts((prev) => prev.map((p) => p.id === selectedProduct.id ? { ...p, ...(dataToSave as Product) } : p))
+        setProducts((prev) => prev.map((p) => p.id === selectedProduct.id ? { ...p, ...(formData as Product) } : p))
         toast.success("Product updated")
       } else {
-        const { data, error } = await supabase.from("products").insert(dataToSave).select().single()
-        if (error) throw error
-        // Prepend new product to local state immediately (Safari-safe)
-        if (data) setProducts((prev) => [data as Product, ...prev])
         toast.success("Product created")
+        router.refresh()
       }
       setIsDialogOpen(false)
       resetForm()
-      router.refresh()
     } catch (err: any) {
       toast.error(err.message || 'Something went wrong.')
     } finally {
@@ -88,12 +98,10 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
     isMutating.current = true
     try {
       const newActive = !product.active
-      const { error } = await supabase.from("products").update({ active: newActive }).eq("id", product.id)
-      if (error) throw error
-      // Update local state immediately (Safari-safe)
+      const result = await toggleProductStatus(product.id, newActive)
+      if (result?.error) throw new Error(result.error)
       setProducts((prev) => prev.map((p) => p.id === product.id ? { ...p, active: newActive } : p))
       toast.success(`Product ${product.active ? "deactivated" : "activated"}`)
-      router.refresh()
     } catch (err: any) {
       toast.error(err.message)
     } finally {
@@ -106,12 +114,10 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
     if (isMutating.current) return
     isMutating.current = true
     try {
-      const { error } = await supabase.from("products").delete().eq("id", id)
-      if (error) throw error
-      // Remove from local state immediately (Safari-safe)
+      const result = await deleteProduct(id)
+      if (result?.error) throw new Error(result.error)
       setProducts((prev) => prev.filter((p) => p.id !== id))
       toast.success("Product deleted")
-      router.refresh()
     } catch (err: any) {
       toast.error(err.message)
     } finally {
@@ -350,7 +356,7 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
                     </TableCell>
                     <TableCell className="text-right px-6">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => { setSelectedProduct(p); setFormData({ ...p, addons: p.addons || [], line_items: p.line_items || [], specs: p.specs || [] }); setIsDialogOpen(true) }} className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><Edit2 className="h-4 w-4" /></button>
+                        <button onClick={() => { setSelectedProduct(p); setFormData({ ...p, addons: p.addons || [], line_items: p.line_items || [], specs: p.specs || [], features: p.features || [] }); setIsDialogOpen(true) }} className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><Edit2 className="h-4 w-4" /></button>
                         <button onClick={() => handleToggleStatus(p)} className={`p-2 rounded-lg transition-colors ${p.active ? "text-red-500 hover:bg-red-50" : "text-green-500 hover:bg-green-50"}`}>
                           {p.active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
                         </button>

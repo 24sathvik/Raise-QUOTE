@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { supabase } from "@/lib/supabase/client"
+import { upsertCategory, deleteCategory } from "./actions"
 
 interface Category {
   id: string
@@ -31,19 +31,13 @@ export default function CategoriesClient({ initialCategories }: { initialCategor
     isMutating.current = true
     setSaving(true)
     try {
-      if (selectedCategory) {
-        const { error } = await supabase.from("categories").update({ name }).eq("id", selectedCategory.id)
-        if (error) throw error
-        toast.success("Category updated successfully")
-      } else {
-        const { error } = await supabase.from("categories").insert({ name })
-        if (error) throw error
-        toast.success("Category created successfully")
-      }
+      const result = await upsertCategory({ id: selectedCategory?.id, name })
+      if (result?.error) throw new Error(result.error)
+      toast.success(selectedCategory ? "Category updated successfully" : "Category created successfully")
       setIsDialogOpen(false)
       setName("")
       setSelectedCategory(null)
-      router.refresh() // ✅ re-runs server component to get fresh data only on success
+      router.refresh()
     } catch (err: any) {
       toast.error(err.message || 'Something went wrong.')
     } finally {
@@ -57,8 +51,8 @@ export default function CategoriesClient({ initialCategories }: { initialCategor
     if (isMutating.current) return
     isMutating.current = true
     try {
-      const { error } = await supabase.from("categories").delete().eq("id", id)
-      if (error) throw error
+      const result = await deleteCategory(id)
+      if (result?.error) throw new Error(result.error)
       toast.success("Category deleted successfully")
       router.refresh()
     } catch (err: any) {

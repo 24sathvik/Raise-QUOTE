@@ -406,7 +406,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         items_json: items,
         subtotal: totals.subtotal,
         tax_amount: 0,
-        tax_total: 0,
         total_amount: totals.grand_total,
         discount_total: discount,
         grand_total: totals.grand_total,

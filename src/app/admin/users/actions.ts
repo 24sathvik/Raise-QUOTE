@@ -132,13 +132,26 @@ export async function deleteUser(userId: string) {
   try {
     const supabaseAdmin = createAdminClient()
 
+    // Nullify created_by on quotations belonging to this user so FK constraint
+    // does not block auth user deletion. The quotations are preserved.
+    await supabaseAdmin
+      .from('quotations')
+      .update({ created_by: null })
+      .eq('created_by', userId)
+
     const { error: authError } =
       await supabaseAdmin.auth.admin.deleteUser(userId)
 
     if (authError) {
-      return { error: authError.message }
+      // Fallback: if auth deletion fails, at least deactivate the profile
+      await supabaseAdmin
+        .from('profiles')
+        .update({ active: false })
+        .eq('id', userId)
+      return { error: `Could not delete auth account: ${authError.message}. User has been deactivated instead.` }
     }
 
+    // Delete profile after auth user is gone
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .delete()

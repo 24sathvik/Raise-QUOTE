@@ -5,12 +5,12 @@ import { Search, Calendar, Download, Menu, X, Plus, Package, LogOut, FileText, C
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import Link from "next/link"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { updateQuotationStatus } from "./actions"
 
 export type QuotationStatus = 'pending' | 'negotiating' | 'approved' | 'rejected' | 'on_hold'
 
@@ -92,13 +92,8 @@ export default function QuotationsClient({ initialQuotations, user }: { initialQ
     isMutating.current = true
     setUpdatingId(id)
     try {
-      const { error } = await supabase
-        .from('quotations')
-        .update({ status: newStatus })
-        .eq('id', id)
-
-      if (error) throw error
-      
+      const result = await updateQuotationStatus(id, newStatus)
+      if (result?.error) throw new Error(result.error)
       toast.success("Status updated successfully")
       router.refresh()
     } catch (error: any) {

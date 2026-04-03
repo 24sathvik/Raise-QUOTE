@@ -7,9 +7,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { supabase } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { updateQuotationStatus } from "./actions"
 
 export type QuotationStatus = 'pending' | 'negotiating' | 'approved' | 'rejected' | 'on_hold'
 
@@ -107,13 +107,8 @@ export default function QuotationsClient({ initialQuotations, activeFilters }: {
     isMutating.current = true
     setUpdatingId(id)
     try {
-      const { error } = await supabase
-        .from('quotations')
-        .update({ status: newStatus })
-        .eq('id', id)
-
-      if (error) throw error
-      
+      const result = await updateQuotationStatus(id, newStatus)
+      if (result?.error) throw new Error(result.error)
       toast.success("Status updated successfully")
       router.refresh()
     } catch (error: any) {
