@@ -36,6 +36,16 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   // Next.js patches require init to be completely safe
   const newInit: RequestInit = { ...init, headers }
 
+  const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase()
+  const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+
+  // 🔥 GLOBAL CHECK: Strip abort signals from all mutations
+  // This prevents React useEffect cleanups or Next.js router cancellations from 
+  // aborting in-flight database writes (create, update, delete, upload).
+  if (isMutation && newInit.signal) {
+    delete newInit.signal
+  }
+
   // 4. Make the initial request
   let response = await originalFetch(input, newInit)
 
