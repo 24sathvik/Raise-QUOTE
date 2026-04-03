@@ -68,7 +68,7 @@ export default function AdminAnalyticsClient({ quotations }: { quotations: Quota
   const kpiStats = [
     { title: "Total Quotations", value: totalQuotations, icon: FileText, color: "text-blue-500", bg: "bg-blue-50", link: `/admin/quotations?month=${qsMonth}&year=${qsYear}` },
     { title: "Approved Quotations", value: approvedQuotes.length, icon: CheckCircle, color: "text-green-500", bg: "bg-green-50", link: `/admin/quotations?status=approved` },
-    { title: "Pending / Negotiating", value: pendingNegotiatingQuotes.length, icon: Clock, color: "text-amber-500", bg: "bg-amber-50", link: `/admin/quotations?status=pending` },
+    { title: "Pending / Negotiating", value: pendingNegotiatingQuotes.length, icon: Clock, color: "text-amber-500", bg: "bg-amber-50", link: `/admin/quotations?status=pending_negotiating` },
     { title: "Rejected", value: rejectedQuotes.length, icon: XCircle, color: "text-red-500", bg: "bg-red-50", link: `/admin/quotations?status=rejected` },
     { title: "Total Revenue (Approved)", value: `₹${totalRevenue.toLocaleString()}`, icon: DollarSign, color: "text-purple-500", bg: "bg-purple-50", link: `/admin/quotations?status=approved` },
     { title: "Conversion Rate", value: `${conversionRate.toFixed(1)}%`, icon: Percent, color: "text-teal-500", bg: "bg-teal-50", link: `/admin/quotations?month=${qsMonth}&year=${qsYear}` },

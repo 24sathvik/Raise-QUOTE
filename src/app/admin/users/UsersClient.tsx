@@ -25,10 +25,16 @@ interface Profile {
 
 export default function UsersClient({ initialUsers }: { initialUsers: Profile[] }) {
   const router = useRouter()
+  const [users, setUsers] = useState<Profile[]>(initialUsers)
   const [search, setSearch] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [formData, setFormData] = useState({ name: "", email: "", password: "", role: "sales", phone: "" })
+
+  // Keep local state in sync if initialUsers prop changes (e.g., server re-render)
+  useEffect(() => {
+    setUsers(initialUsers)
+  }, [initialUsers])
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300)
@@ -38,9 +44,16 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     try {
+      // Get the current session token so the API works in Safari (ITP blocks cookies)
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+
       const res = await fetch('/api/admin/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
@@ -51,9 +64,23 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to create user')
-      
+
+      // Optimistically add the new user to local state so Safari sees it immediately
+      const newUser: Profile = {
+        id: data.id || `temp-${Date.now()}`,
+        full_name: formData.name,
+        email: formData.email,
+        role: formData.role,
+        active: true,
+        created_at: new Date().toISOString(),
+        phone: formData.phone || null,
+      }
+      setUsers((prev) => [newUser, ...prev])
+
       toast.success("User created successfully")
       setIsCreateOpen(false)
+      setFormData({ name: "", email: "", password: "", role: "sales", phone: "" })
+      // Also trigger server refresh so the correct ID is loaded
       router.refresh()
     } catch (error: any) {
       toast.error(error.message)
@@ -61,19 +88,32 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
   }
 
   async function handleToggle(user: Profile) {
-    const { error } = await supabase.from("profiles").update({ active: !user.active }).eq("id", user.id)
-    if (error) toast.error(error.message)
-    else { toast.success("User status updated"); router.refresh() }
+    const newActive = !user.active
+    const { error } = await supabase.from("profiles").update({ active: newActive }).eq("id", user.id)
+    if (error) {
+      toast.error(error.message)
+    } else {
+      // Update local state immediately (Safari-safe)
+      setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, active: newActive } : u))
+      toast.success("User status updated")
+      router.refresh()
+    }
   }
 
   async function handleDelete(user: Profile) {
     if (!confirm(`Delete ${user.full_name}? This cannot be undone.`)) return
     const { error } = await supabase.from("profiles").delete().eq("id", user.id)
-    if (error) toast.error(error.message)
-    else { toast.success("User deleted"); router.refresh() }
+    if (error) {
+      toast.error(error.message)
+    } else {
+      // Remove from local state immediately (Safari-safe)
+      setUsers((prev) => prev.filter((u) => u.id !== user.id))
+      toast.success("User deleted")
+      router.refresh()
+    }
   }
 
-  const filtered = initialUsers.filter(
+  const filtered = users.filter(
     (u) => u.full_name?.toLowerCase().includes(debouncedSearch.toLowerCase()) || u.email?.toLowerCase().includes(debouncedSearch.toLowerCase())
   )
 

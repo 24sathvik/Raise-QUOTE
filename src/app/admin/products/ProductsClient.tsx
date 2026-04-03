@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Plus, Search, Edit2, Trash2, Power, PowerOff, Upload, X } from "lucide-react"
 import { toast } from "sonner"
 import Image from "next/image"
@@ -32,11 +32,18 @@ interface Props {
 
 export default function ProductsClient({ initialProducts, initialCategories }: Props) {
   const router = useRouter()
+  // Local state so UI updates immediately on Safari without relying on router.refresh()
+  const [products, setProducts] = useState<Product[]>(initialProducts)
   const [search, setSearch] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  // Sync local state when server re-renders with new initialProducts
+  useEffect(() => {
+    setProducts(initialProducts)
+  }, [initialProducts])
 
   const [formData, setFormData] = useState<Partial<Product>>({
     name: "", description: "", price: 0, tax_percent: 18, active: true,
@@ -51,10 +58,14 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
       if (selectedProduct) {
         const { error } = await supabase.from("products").update(dataToSave).eq("id", selectedProduct.id)
         if (error) throw error
+        // Update local state immediately (Safari-safe)
+        setProducts((prev) => prev.map((p) => p.id === selectedProduct.id ? { ...p, ...(dataToSave as Product) } : p))
         toast.success("Product updated")
       } else {
-        const { error } = await supabase.from("products").insert(dataToSave)
+        const { data, error } = await supabase.from("products").insert(dataToSave).select().single()
         if (error) throw error
+        // Prepend new product to local state immediately (Safari-safe)
+        if (data) setProducts((prev) => [data as Product, ...prev])
         toast.success("Product created")
       }
       setIsDialogOpen(false)
@@ -69,8 +80,11 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
 
   const handleToggleStatus = async (product: Product) => {
     try {
-      const { error } = await supabase.from("products").update({ active: !product.active }).eq("id", product.id)
+      const newActive = !product.active
+      const { error } = await supabase.from("products").update({ active: newActive }).eq("id", product.id)
       if (error) throw error
+      // Update local state immediately (Safari-safe)
+      setProducts((prev) => prev.map((p) => p.id === product.id ? { ...p, active: newActive } : p))
       toast.success(`Product ${product.active ? "deactivated" : "activated"}`)
       router.refresh()
     } catch (err: any) {
@@ -83,6 +97,8 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
     try {
       const { error } = await supabase.from("products").delete().eq("id", id)
       if (error) throw error
+      // Remove from local state immediately (Safari-safe)
+      setProducts((prev) => prev.filter((p) => p.id !== id))
       toast.success("Product deleted")
       router.refresh()
     } catch (err: any) {
@@ -114,7 +130,7 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
     setFormData({ name: "", description: "", price: 0, tax_percent: 18, active: true, image_url: null, category: "", sku: "", addons: [], line_items: [], specs: [], features: [], image_format: "wide" })
   }
 
-  const filteredProducts = initialProducts.filter(p =>
+  const filteredProducts = products.filter(p =>
     p.name?.toLowerCase().includes(search.toLowerCase()) ||
     p.category?.toLowerCase().includes(search.toLowerCase())
   )

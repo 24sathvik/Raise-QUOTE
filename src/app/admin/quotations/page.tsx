@@ -19,7 +19,10 @@ export default async function QuotationsPage(props: { searchParams: Promise<{ [k
     query = query.gte('created_at', start).lt('created_at', end)
   }
 
-  if (searchParams.status) {
+  if (searchParams.status === 'pending_negotiating') {
+    // Compound filter: match both pending and negotiating (used by the KPI card)
+    query = query.in('status', ['pending', 'negotiating'])
+  } else if (searchParams.status) {
     query = query.eq('status', searchParams.status)
   }
 

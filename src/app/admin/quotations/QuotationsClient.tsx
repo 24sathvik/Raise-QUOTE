@@ -96,6 +96,8 @@ export default function QuotationsClient({ initialQuotations, activeFilters }: {
   const activeFilterCount = Object.values(activeFilters || {}).filter(Boolean).length
   const filterSummary = activeFilters?.month && activeFilters?.year 
     ? `Showing quotations for ${new Date(Number(activeFilters.year), Number(activeFilters.month) - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}`
+    : activeFilters?.status === 'pending_negotiating'
+    ? `Showing Pending / Negotiating quotations`
     : activeFilters?.status
     ? `Showing ${statusLabels[activeFilters.status as QuotationStatus]} quotations`
     : null
