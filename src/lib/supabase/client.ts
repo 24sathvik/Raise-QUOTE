@@ -9,37 +9,37 @@ let isRefreshing = false
 
 const customFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const urlString = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  const isSupabaseCall = urlString.includes(supabaseUrl) && !urlString.includes('/auth/v1/')
+  const isLocalApiCall = typeof input === 'string' && input.startsWith('/api/')
 
-  // 1. Skip interceptor for authentication requests to prevent infinite loops, and skip server-side execution
-  if (typeof window === 'undefined' || urlString.includes('/auth/v1/')) {
+  // 1. Skip interceptor for authentication requests and Next.js internals to prevent infinite loops and AbortErrors
+  if (typeof window === 'undefined' || (!isSupabaseCall && !isLocalApiCall)) {
     return originalFetch(input, init)
   }
 
-  // 2. Before every request — silently refresh the auth token first
-  try {
-    if (!isRefreshing) {
-      isRefreshing = true
-      await supabase.auth.refreshSession()
-      isRefreshing = false
-    }
-  } catch (e) {
-    isRefreshing = false
+  // 2. Safely extract headers whether input is a Request or just strings
+  let headers = new Headers()
+  if (input instanceof Request) {
+    input.headers.forEach((value, key) => headers.set(key, value))
+  }
+  if (init?.headers) {
+    const initHeaders = new Headers(init.headers)
+    initHeaders.forEach((value, key) => headers.set(key, value))
   }
 
-  // Attach the fresh token to the request header
+  // 3. Get session (automatically triggers a background refresh via SDK if expired soon)
   const { data: { session } } = await supabase.auth.getSession()
-  
-  let newInit = init ? { ...init } : {}
   if (session?.access_token) {
-    const newHeaders = new Headers(newInit.headers)
-    newHeaders.set('Authorization', `Bearer ${session.access_token}`)
-    newInit.headers = newHeaders
+    headers.set('Authorization', `Bearer ${session.access_token}`)
   }
 
-  // 3. Make the initial request
+  // Next.js patches require init to be completely safe
+  const newInit: RequestInit = { ...init, headers }
+
+  // 4. Make the initial request
   let response = await originalFetch(input, newInit)
 
-  // 4. If 401 or 403, retry once
+  // 5. If 401 or 403, violently refresh and retry once
   if (response.status === 401 || response.status === 403) {
     try {
       if (!isRefreshing) {
@@ -53,14 +53,12 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     
     const { data: { session: retrySession } } = await supabase.auth.getSession()
     if (retrySession?.access_token) {
-      const retryHeaders = new Headers(newInit.headers)
-      retryHeaders.set('Authorization', `Bearer ${retrySession.access_token}`)
-      newInit.headers = retryHeaders
-      
+      headers.set('Authorization', `Bearer ${retrySession.access_token}`)
+      newInit.headers = headers
       response = await originalFetch(input, newInit)
     }
     
-    // 5. If the retry also fails
+    // 6. If the retry also fails
     if (response.status === 401 || response.status === 403) {
       toast.error('Session expired. Please log in again.')
       window.location.href = '/auth/login'
