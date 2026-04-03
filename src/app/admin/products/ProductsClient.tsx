@@ -113,6 +113,7 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
     try {
       const fileExt = file.name.split(".").pop()
       const fileName = `${Math.random()}.${fileExt}`
+      
       const { error: uploadError } = await supabase.storage.from("products").upload(fileName, file)
       if (uploadError) throw uploadError
       const { data: { publicUrl } } = supabase.storage.from("products").getPublicUrl(fileName)

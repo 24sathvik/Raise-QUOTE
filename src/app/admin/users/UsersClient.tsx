@@ -44,16 +44,9 @@ export default function UsersClient({ initialUsers }: { initialUsers: Profile[] 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     try {
-      // Get the current session token so the API works in Safari (ITP blocks cookies)
-      const { data: { session } } = await supabase.auth.getSession()
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`
-      }
-
       const res = await fetch('/api/admin/users', {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
