@@ -13,7 +13,6 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { supabase } from "@/lib/supabase/client"
 import { upsertProduct, deleteProduct, toggleProductStatus } from "./actions"
 
 interface Addon { name: string; price: number; description?: string; active?: boolean; moc?: string; qty?: string }
@@ -128,17 +127,23 @@ export default function ProductsClient({ initialProducts, initialCategories }: P
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || isUploading.current) return
+    // Reset the input so the same file can be re-selected if needed
+    e.target.value = ''
     isUploading.current = true
     setUploading(true)
     try {
-      const fileExt = file.name.split(".").pop()
-      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
-      
-      const { error: uploadError } = await supabase.storage.from("products").upload(fileName, file)
-      if (uploadError) throw uploadError
-      const { data: { publicUrl } } = supabase.storage.from("products").getPublicUrl(fileName)
-      setFormData({ ...formData, image_url: publicUrl })
-      toast.success("Image uploaded")
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('bucket', 'products')
+
+      const res = await fetch('/api/upload', { method: 'POST', body: fd })
+      const json = await res.json()
+
+      if (!res.ok || json.error) throw new Error(json.error || 'Upload failed')
+
+      // Functional update — never overwrites other formData changes made during upload
+      setFormData(prev => ({ ...prev, image_url: json.url }))
+      toast.success('Image uploaded')
     } catch (err: any) {
       toast.error(err.message || 'Upload failed')
     } finally {
