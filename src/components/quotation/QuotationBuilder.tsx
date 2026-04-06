@@ -54,7 +54,11 @@ import {
   Badge
 } from "@/components/ui/badge"
 import { generateQuotationPDF } from "@/lib/pdf-service"
-import { supabase } from "@/lib/supabase/client"
+import {
+  getNextQuotationNumber,
+  saveQuotation,
+  updateQuotationPdfUrl,
+} from "@/app/quotations/actions"
 
 // 🔥 MARGIN CONFIGURATION
 const MARGIN_PERCENTAGE = 50 // Sales sees 30% markup over base price
@@ -149,7 +153,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     DEFAULT_TERMS.map((t, i) => ({
       id: `term-${i}`,
       text: t,
-      // Only first warranty selected by default, others deselected
       selected: WARRANTY_TERMS.includes(t)
         ? t === "WARRANTY: One year warranty from the date of dispatch"
         : true
@@ -157,45 +160,20 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
   )
   const [currency, setCurrency] = useState<Currency>('INR')
 
-
-  // Fetch next sequential quotation number
+  // Fetch next sequential quotation number via server action
   useEffect(() => {
-    const fetchNextQuotationNumber = async () => {
-      try {
-        const { data: lastQuotation } = await supabase
-          .from('quotations')
-          .select('quotation_number')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
+    getNextQuotationNumber().then(({ number }) => {
+      setMeta(prev => ({ ...prev, number }))
+    })
+  }, [])
 
-        let nextNumber = 'RLE-101'
-        if (lastQuotation?.quotation_number) {
-          const match = lastQuotation.quotation_number.match(/RLE-(\d+)/)
-          if (match) {
-            const num = parseInt(match[1]) + 1
-            nextNumber = `RLE-${num}`
-          }
-        }
-
-        setMeta(prev => ({ ...prev, number: nextNumber }))
-      } catch (error) {
-        console.error('Failed to fetch quotation number:', error)
-        setMeta(prev => ({ ...prev, number: 'RLE-101' }))
-      }
-    }
-
-    fetchNextQuotationNumber()
-  }, [supabase])
-
-  // Load draft — only restore if version matches to avoid stale data on schema changes
+  // Load draft
   useEffect(() => {
     const DRAFT_VERSION = 'v3'
     const draft = localStorage.getItem("quotation_draft")
     if (draft) {
       try {
         const parsed = JSON.parse(draft)
-        // Clear if version mismatch or no items — prevents stale/broken state on reload
         if (parsed._v !== DRAFT_VERSION || !parsed.items?.length) {
           localStorage.removeItem("quotation_draft")
           return
@@ -218,7 +196,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
           setTerms(parsed.terms)
         }
       } catch (e) {
-        // Corrupt draft — wipe it
         localStorage.removeItem("quotation_draft")
       }
     }
@@ -232,7 +209,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         JSON.stringify({ _v: 'v3', items, customer, meta, discount, terms })
       )
     }, 1000)
-
     return () => clearTimeout(timeoutId)
   }, [items, customer, meta, discount, terms])
 
@@ -242,17 +218,14 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       const lineItemsPrice = item.selectedLineItems?.reduce((sum, li) => sum + li.price, 0) || 0
       return acc + (item.price + addonsPrice + lineItemsPrice) * item.qty
     }, 0)
-
     const tax_amount = 0
     const grand_total = Math.max(0, subtotal - discount)
-
     return { subtotal, tax_amount, grand_total }
   }, [items, discount])
 
   const addItem = useCallback((product: Product) => {
     const basePrice = product.price
     const mrp = basePrice * (1 + MARGIN_PERCENTAGE / 100)
-
     const newItem: QuotationItem = {
       id: Math.random().toString(36).slice(2),
       product_id: product.id,
@@ -264,13 +237,10 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
       price: mrp,
       image_url: product.image_url,
       sku: product.sku,
-      // All addons pre-selected
       selectedAddons: product.addons
         ? product.addons.map(a => ({ name: a.name, price: a.price, moc: a.moc, qty: a.qty }))
         : [],
-      // Full list stored on the item — used for rendering checkboxes
       availableLineItems: product.line_items ? [...product.line_items] : [],
-      // All extra line items pre-selected by default
       selectedLineItems: product.line_items ? [...product.line_items] : [],
       specs: product.specs || [],
       features: product.features || [],
@@ -319,13 +289,10 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     }))
   }, [])
 
-  // Warranty terms behave as a radio group — selecting one deselects all others.
-  // Non-warranty terms toggle normally.
   const toggleTerm = useCallback((termId: string) => {
     setTerms(terms => {
       const clickedTerm = terms.find(t => t.id === termId)
       const isWarrantyTerm = WARRANTY_TERMS.includes(clickedTerm?.text || "")
-
       if (isWarrantyTerm) {
         return terms.map(t => {
           if (WARRANTY_TERMS.includes(t.text)) {
@@ -343,29 +310,13 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     if (!confirm("Are you sure you want to clear this quotation?")) return
     setItems([])
     setCustomer({ name: "", company: "", phone: "", email: "", address: "" })
-    const triggerRefetch = async () => {
-      const { data: lastQuotation } = await supabase
-        .from('quotations')
-        .select('quotation_number')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      let nextNumber = 'RLE-101'
-      if (lastQuotation?.quotation_number) {
-        const match = lastQuotation.quotation_number.match(/RLE-(\d+)/)
-        if (match) {
-          const num = parseInt(match[1]) + 1
-          nextNumber = `RLE-${num}`
-        }
-      }
+    getNextQuotationNumber().then(({ number }) => {
       setMeta({
-        number: nextNumber,
+        number,
         date: new Date().toISOString().split("T")[0],
         validity_days: 30,
       })
-    }
-    triggerRefetch()
+    })
     setDiscount(0)
     setTerms(DEFAULT_TERMS.map((t, i) => ({
       id: `term-${i}`,
@@ -395,7 +346,8 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         return
       }
 
-      const { data, error } = await supabase.from("quotations").insert({
+      // 1. Save quotation via server action
+      const result = await saveQuotation({
         quotation_number: meta.number,
         created_by: user.id,
         customer_name: customer.name,
@@ -410,11 +362,15 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         discount_total: discount,
         grand_total: totals.grand_total,
         status: 'pending',
-      }).select().single()
+      })
 
-      if (error) throw error
+      if (result.error) throw new Error(result.error)
+      const data = result.data!
 
-      const calculatedValidityDate = new Date(new Date(meta.date).setDate(new Date(meta.date).getDate() + (meta.validity_days || 30))).toISOString()
+      // 2. Generate PDF blob
+      const calculatedValidityDate = new Date(
+        new Date(meta.date).setDate(new Date(meta.date).getDate() + (meta.validity_days || 30))
+      ).toISOString()
 
       const pdfBlob = await generateQuotationPDF({
         quotation: data,
@@ -432,26 +388,32 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         }
       })
 
+      // 3. Upload PDF via the shared /api/upload route
       const fileName = `${data.quotation_number}_${data.id}.pdf`
-      const { error: uploadError } = await supabase.storage
-        .from("quotations")
-        .upload(fileName, pdfBlob, {
-          contentType: "application/pdf",
-          upsert: true
-        })
+      const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' })
+      const fd = new FormData()
+      fd.append('file', pdfFile)
+      fd.append('bucket', 'quotations')
 
-      if (uploadError) {
-        console.error("PDF Upload Error:", uploadError)
+      const uploadRes = await fetch('/api/upload', { method: 'POST', body: fd })
+      const uploadJson = await uploadRes.json()
+
+      if (uploadRes.ok && uploadJson.url) {
+        // 4. Persist PDF URL via server action
+        await updateQuotationPdfUrl(data.id, uploadJson.url)
       } else {
-        const { data: { publicUrl } } = supabase.storage
-          .from("quotations")
-          .getPublicUrl(fileName)
-
-        await supabase
-          .from("quotations")
-          .update({ pdf_url: publicUrl })
-          .eq("id", data.id)
+        console.error("PDF Upload Error:", uploadJson.error)
       }
+
+      // 5. Trigger browser download
+      const url = URL.createObjectURL(pdfBlob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
 
       toast.success("Quotation saved and PDF generated")
 
@@ -462,7 +424,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         return prev
       })
     } catch (err: any) {
-      // Next.js 15 dev HMR aborts in-flight fetches — retry once automatically
       if (err.name === 'AbortError') {
         setSaving(false)
         toast.info("Connection interrupted, retrying...")
@@ -866,7 +827,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                                       </div>
                                     )}
 
-                                    {/* ✅ FIX: Extra Line Items — read from sourceProduct.line_items (same pattern as addons) */}
+                                    {/* Extra Line Items */}
                                     {sourceProduct?.line_items && sourceProduct.line_items.length > 0 && (
                                       <div className="space-y-2">
                                         <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Extra Line Items</p>
@@ -1062,7 +1023,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                               </div>
                             )}
 
-                            {/* ✅ FIX: Extra Line Items — mobile, read from sourceProduct.line_items */}
+                            {/* Extra Line Items — mobile */}
                             {sourceProduct?.line_items && sourceProduct.line_items.length > 0 && (
                               <div className="space-y-2 pt-2 border-t border-gray-50">
                                 <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Extra Line Items</p>
@@ -1141,8 +1102,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
               </CardHeader>
               <CardContent className="p-6">
                 <div className="space-y-1">
-
-                  {/* Non-warranty terms — normal checkboxes */}
                   {nonWarrantyTerms.map((term) => (
                     <div
                       key={term.id}
@@ -1164,19 +1123,11 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                     </div>
                   ))}
 
-                  {/* Warranty — radio group, shows only text after ":" */}
                   <div className="pt-4">
-                    {/* Header row: "Warranty:" label + currently selected value */}
                     <div className="flex items-baseline gap-2 px-3 mb-2">
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                        Warranty:
-                      </span>
-                      <span className="text-[10px] font-bold text-black">
-                        {selectedWarrantyLabel}
-                      </span>
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Warranty:</span>
+                      <span className="text-[10px] font-bold text-black">{selectedWarrantyLabel}</span>
                     </div>
-
-                    {/* Radio options */}
                     <div className="ml-4 border-l-2 border-gray-100 pl-4 flex flex-col gap-1">
                       {warrantyTerms.map((term) => {
                         const label = term.text.split(':').slice(1).join(':').trim()
@@ -1205,7 +1156,6 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                       })}
                     </div>
                   </div>
-
                 </div>
               </CardContent>
             </Card>
