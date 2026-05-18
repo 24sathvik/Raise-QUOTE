@@ -43,8 +43,8 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-[#F9FAFB] p-6">
       <div className="w-full max-w-[440px] space-y-8 rounded-3xl bg-white p-10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
         <div className="space-y-3 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-black text-white shadow-lg">
-            <span className="text-2xl font-black">R</span>
+          <div className="mx-auto flex h-16 w-auto items-center justify-center">
+            <img src="/Zyxen-logo.jpeg" alt="Zyxen Logo" className="h-16 w-auto object-contain" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-black">Welcome Back</h1>
           <p className="text-muted-foreground">Sign in to your Raise Labs account</p>
@@ -101,7 +101,7 @@ export default function LoginPage() {
 
         <div className="pt-4 text-center">
           <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium">
-            Proprietary System of Raise Labs
+            PROPRIETARY SYSTEM MADE BY ZYXEN
           </p>
         </div>
       </div>

@@ -19,6 +19,9 @@ export const metadata: Metadata = {
   title: "Zyxen — Quotation System",
   description: "Zyxen Quotation Management System",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/Zyxen-logo.jpeg",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
