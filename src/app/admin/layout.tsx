@@ -12,27 +12,19 @@ export default async function AdminLayout({
 
   const { data: { user }, error } = await supabase.auth.getUser()
 
-  console.log('👤 USER:', user?.id, '| ERROR:', error?.message)
-
   if (error || !user) {
-    console.log('❌ Redirecting — no user')
     redirect("/auth/login")
   }
 
-  const { data: profile, error: profileError } = await supabase
+  const { data: profile } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
     .single()
 
-  console.log('📋 PROFILE:', profile, '| PROFILE ERROR:', profileError?.message)
-
   if (!profile || profile.role !== "admin") {
-    console.log('❌ Redirecting — no profile or not admin')
     redirect("/")
   }
-
-  console.log('✅ Auth passed, rendering admin layout')
 
   return (
     <SidebarProvider>

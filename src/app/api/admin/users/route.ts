@@ -1,14 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!, // service role — never expose client-side
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
-
 export async function POST(req: NextRequest) {
   try {
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321',
+      process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy_key', // service role — never expose client-side
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+
     const { email, password, name, phone, role } = await req.json()
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
