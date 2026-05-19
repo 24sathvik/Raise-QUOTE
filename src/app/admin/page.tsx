@@ -21,7 +21,7 @@ export default async function AdminDashboard() {
 
   return (
     <div className="pb-10">
-      <AdminAnalyticsClient quotations={quotations || []} />
+      <AdminAnalyticsClient quotations={quotations as any || []} />
     </div>
   )
 }

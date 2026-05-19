@@ -119,10 +119,13 @@ export default function QuotationsClient({ initialQuotations, user }: { initialQ
         <div className="flex h-full flex-col">
           <div className="flex h-20 items-center justify-between px-6">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black text-white">
-                <span className="font-black">R</span>
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-black">
+                <img src="/Zyxen-logo.jpeg" alt="Zyxen Logo" className="h-full w-full object-cover" />
               </div>
-              <span className="text-sm font-black tracking-tighter">RAISE LABS</span>
+              <div className="flex flex-col overflow-hidden">
+                <span className="truncate text-sm font-black tracking-tighter leading-none">Raise Labs</span>
+                <span className="truncate text-xs text-muted-foreground">Sales Panel</span>
+              </div>
             </div>
             <button className="lg:hidden" onClick={() => setIsSidebarOpen(false)}>
               <X className="h-5 w-5" />
@@ -185,8 +188,8 @@ export default function QuotationsClient({ initialQuotations, user }: { initialQ
             <Menu className="h-6 w-6" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-black text-white">
-              <span className="text-xs font-black">R</span>
+            <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-black">
+              <img src="/Zyxen-logo.jpeg" alt="Zyxen Logo" className="h-full w-full object-cover" />
             </div>
             <span className="text-xs font-black tracking-tighter">RAISE LABS</span>
           </div>

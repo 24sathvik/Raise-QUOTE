@@ -106,14 +106,24 @@ export default function ProductDialog({ product }: { product?: Product }) {
       formData.set('image_url', imageUrl)
     }
 
-    // Add specs and addons as JSON string
-    formData.set('specs', JSON.stringify(specs))
-    formData.set('addons', JSON.stringify(addons))
-    formData.set('line_items', JSON.stringify(lineItems))
-    formData.delete('image') // Don't send file to server action
+    const productData = {
+      id: product?.id,
+      name: formData.get('name') as string,
+      category: formData.get('category') as string,
+      sku: formData.get('sku') as string,
+      image_format: formData.get('image_format') as string,
+      description: formData.get('description') as string,
+      price: parseFloat(formData.get('price') as string) || 0,
+      active: formData.get('active') === 'true',
+      image_url: imageUrl,
+      specs: specs,
+      addons: addons,
+      line_items: lineItems,
+      tax_percent: 0,
+    }
 
     try {
-      const result = await upsertProduct(formData)
+      const result = await upsertProduct(productData)
 
       if (result?.error) {
         toast.error(result.error)

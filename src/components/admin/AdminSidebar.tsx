@@ -36,8 +36,8 @@ export function AdminSidebar() {
     <Sidebar variant="inset" collapsible="icon">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-3 px-2">
-          <div className="flex h-8 w-8 items-center justify-center">
-            <img src="/Zyxen-logo.jpeg" alt="Zyxen Logo" className="h-8 w-full object-contain" />
+          <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-black">
+            <img src="/Zyxen-logo.jpeg" alt="Zyxen Logo" className="h-full w-full object-cover" />
           </div>
           <div className="flex flex-col overflow-hidden">
             <span className="truncate font-semibold leading-none">Raise Labs</span>

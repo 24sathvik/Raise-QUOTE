@@ -41,9 +41,9 @@ export default function InstallPWA() {
         <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-black">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/icons/icon-192x192.png"
+            src="/Zyxen-logo.jpeg"
             alt="Zyxen"
-            className="h-10 w-10 rounded-lg object-contain"
+            className="h-full w-full object-cover"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
           />
         </div>
