@@ -8,7 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const INPUT = path.resolve(__dirname, '../public/quotation-logo.png');
+const INPUT = path.resolve(__dirname, '../public/Zyxen-logo.jpeg');
 const OUT_DIR = path.resolve(__dirname, '../public/icons');
 const SCREENSHOTS_DIR = path.resolve(__dirname, '../public/screenshots');
 
