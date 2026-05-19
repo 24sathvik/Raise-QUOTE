@@ -10,8 +10,7 @@ export default function InstallPWA() {
 
   useEffect(() => {
     const wasDismissed = localStorage.getItem('pwa-banner-dismissed') === 'true'
-    const wasInstalled = localStorage.getItem('pwa-installed') === 'true'
-    if (!wasDismissed && !wasInstalled) {
+    if (!wasDismissed) {
       setDismissed(false)
     }
   }, [])

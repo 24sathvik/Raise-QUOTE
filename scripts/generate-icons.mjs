@@ -17,55 +17,45 @@ if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
 if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
 const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
-const BG_COLOR = { r: 255, g: 255, b: 255, alpha: 1 };
 
 async function generateIcons() {
   console.log('Generating icons from:', INPUT);
 
   // Standard icons (any purpose)
   for (const size of sizes) {
-    const outPath = path.join(OUT_DIR, `icon-${size}x${size}.png`);
+    const outPath = path.join(OUT_DIR, `icon-${size}x${size}.jpeg`);
     await sharp(INPUT)
-      .resize(size, size, { fit: 'contain', background: BG_COLOR })
-      .png()
+      .resize(size, size, { fit: 'cover' })
+      .jpeg({ quality: 100 })
       .toFile(outPath);
-    console.log(`  ✓ icon-${size}x${size}.png`);
+    console.log(`  ✓ icon-${size}x${size}.jpeg`);
   }
 
-  // Maskable icons — 20% safe-zone padding
+  // Maskable icons (no padding, just perfectly fit to square)
   for (const size of [192, 512]) {
-    const padding = Math.floor(size * 0.2);
-    const innerSize = size - padding * 2;
-    const outPath = path.join(OUT_DIR, `icon-maskable-${size}x${size}.png`);
+    const outPath = path.join(OUT_DIR, `icon-maskable-${size}x${size}.jpeg`);
     await sharp(INPUT)
-      .resize(innerSize, innerSize, { fit: 'contain', background: BG_COLOR })
-      .extend({
-        top: padding,
-        bottom: padding,
-        left: padding,
-        right: padding,
-        background: BG_COLOR,
-      })
-      .png()
+      .resize(size, size, { fit: 'cover' })
+      .jpeg({ quality: 100 })
       .toFile(outPath);
-    console.log(`  ✓ icon-maskable-${size}x${size}.png`);
+    console.log(`  ✓ icon-maskable-${size}x${size}.jpeg`);
   }
 
-  // Screenshots — desktop 1280x720
-  const desktopPath = path.join(SCREENSHOTS_DIR, 'desktop.png');
+  // Screenshots — desktop 1280x720 (cover to fill without white bars)
+  const desktopPath = path.join(SCREENSHOTS_DIR, 'desktop.jpeg');
   await sharp(INPUT)
-    .resize(1280, 720, { fit: 'contain', background: BG_COLOR })
-    .png()
+    .resize(1280, 720, { fit: 'cover' })
+    .jpeg({ quality: 100 })
     .toFile(desktopPath);
-  console.log('  ✓ screenshots/desktop.png');
+  console.log('  ✓ screenshots/desktop.jpeg');
 
-  // Screenshots — mobile 390x844
-  const mobilePath = path.join(SCREENSHOTS_DIR, 'mobile.png');
+  // Screenshots — mobile 390x844 (cover to fill without white bars)
+  const mobilePath = path.join(SCREENSHOTS_DIR, 'mobile.jpeg');
   await sharp(INPUT)
-    .resize(390, 844, { fit: 'contain', background: BG_COLOR })
-    .png()
+    .resize(390, 844, { fit: 'cover' })
+    .jpeg({ quality: 100 })
     .toFile(mobilePath);
-  console.log('  ✓ screenshots/mobile.png');
+  console.log('  ✓ screenshots/mobile.jpeg');
 
   console.log('\nAll icons generated successfully!');
 }
