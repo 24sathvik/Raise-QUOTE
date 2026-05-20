@@ -168,32 +168,25 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
                       {new Date(q.created_at).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="px-8 text-right">
-                      {q.pdf_url && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-9 gap-2 rounded-xl border-gray-100 font-bold hover:bg-gray-50"
-                          onClick={async () => {
-                            try {
-                              const path = q.pdf_url?.split('/').pop() // Extract filename
-                              if (!path) return
-
-                              const { data, error } = await supabase.storage
-                                .from('quotations-pdfs')
-                                .createSignedUrl(path, 60)
-
-                              if (error) throw error
-                              if (data?.signedUrl) {
-                                window.open(data.signedUrl, '_blank')
-                              }
-                            } catch (err: any) {
-                              toast.error("Failed to download PDF: " + err.message)
-                            }
-                          }}
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          View PDF
-                        </Button>
+                      {q.pdf_url ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <a
+                            href={q.pdf_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-9 gap-2 rounded-xl border-gray-100 font-bold hover:bg-gray-50"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              View PDF
+                            </Button>
+                          </a>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400">No PDF</span>
                       )}
                     </TableCell>
                   </TableRow>

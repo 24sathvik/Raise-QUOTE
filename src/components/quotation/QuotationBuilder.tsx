@@ -402,7 +402,9 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         // 4. Persist PDF URL via server action
         await updateQuotationPdfUrl(data.id, uploadJson.url)
       } else {
+        // Surface the upload error — without this the admin panel will show "No PDF available"
         console.error("PDF Upload Error:", uploadJson.error)
+        toast.warning(`Quotation saved but PDF could not be stored: ${uploadJson.error || 'Upload failed'}. The PDF has been downloaded locally.`)
       }
 
       // 5. Trigger browser download
