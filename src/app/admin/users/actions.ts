@@ -48,17 +48,19 @@ export async function createSalesperson(formData: FormData) {
       return { error: 'Failed to create auth user.' }
     }
 
-    // Create profile row
+    // Upsert profile row — use upsert instead of insert to handle the case
+    // where a Supabase auth trigger has already created a profile row,
+    // which would cause a duplicate key violation on profiles_pkey.
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
-      .insert({
+      .upsert({
         id: authUser.user.id,
         full_name: name,
         email,
         phone,
         role,
         active: true
-      })
+      }, { onConflict: 'id' })
 
     if (profileError) {
       await supabaseAdmin.auth.admin.deleteUser(authUser.user.id)

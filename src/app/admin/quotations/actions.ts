@@ -17,3 +17,18 @@ export async function updateQuotationStatus(id: string, status: string) {
   revalidatePath('/quotations')
   return { success: true }
 }
+
+export async function deleteQuotation(id: string) {
+  const supabase = createAdminClient()
+
+  const { error } = await supabase
+    .from('quotations')
+    .delete()
+    .eq('id', id)
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/admin/quotations')
+  revalidatePath('/quotations')
+  return { success: true }
+}

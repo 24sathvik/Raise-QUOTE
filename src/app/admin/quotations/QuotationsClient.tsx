@@ -1,15 +1,15 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { Search, Calendar, User, Download, ChevronDown, ArrowUp, ArrowDown, X } from "lucide-react"
+import { Search, Calendar, User, Download, ChevronDown, ArrowUp, ArrowDown, X, MoreHorizontal, Trash2, Eye } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { updateQuotationStatus } from "./actions"
+import { updateQuotationStatus, deleteQuotation } from "./actions"
 
 export type QuotationStatus = 'pending' | 'negotiating' | 'approved' | 'rejected' | 'on_hold'
 
@@ -116,6 +116,22 @@ export default function QuotationsClient({ initialQuotations, activeFilters }: {
     } finally {
       isMutating.current = false
       setUpdatingId(null)
+    }
+  }
+
+  const handleDelete = async (q: Quotation) => {
+    if (!confirm(`Delete quotation ${q.quotation_number} for ${q.customer_name}? This cannot be undone.`)) return
+    if (isMutating.current) return
+    isMutating.current = true
+    try {
+      const result = await deleteQuotation(q.id)
+      if (result?.error) throw new Error(result.error)
+      toast.success(`Quotation ${q.quotation_number} deleted`)
+      router.refresh()
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete quotation")
+    } finally {
+      isMutating.current = false
     }
   }
 
@@ -245,12 +261,52 @@ export default function QuotationsClient({ initialQuotations, activeFilters }: {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      {q.pdf_url && (
-                        <a href={q.pdf_url} target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-md border px-3 py-1 text-xs font-medium transition-colors hover:bg-gray-50">
-                          <Download className="h-3 w-3" /> View PDF
-                        </a>
-                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none">
+                            <MoreHorizontal className="h-4 w-4 text-gray-500" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="rounded-xl shadow-xl w-52">
+                          {q.pdf_url ? (
+                            <>
+                              <DropdownMenuItem asChild>
+                                <a
+                                  href={q.pdf_url}
+                                  download
+                                  className="flex items-center gap-2 cursor-pointer"
+                                >
+                                  <Download className="h-4 w-4 text-gray-500" />
+                                  Download PDF
+                                </a>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem asChild>
+                                <a
+                                  href={q.pdf_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2 cursor-pointer"
+                                >
+                                  <Eye className="h-4 w-4 text-gray-500" />
+                                  View Quotation
+                                </a>
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          ) : (
+                            <DropdownMenuItem disabled className="text-gray-400 text-xs">
+                              No PDF available
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            onClick={() => handleDelete(q)}
+                            className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete Quotation
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))
