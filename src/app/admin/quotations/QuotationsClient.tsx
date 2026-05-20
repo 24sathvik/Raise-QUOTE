@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { Search, Calendar, User, Download, ChevronDown, ArrowUp, ArrowDown, X, MoreHorizontal, Trash2, Eye } from "lucide-react"
+import { Search, Calendar, User, Download, ChevronDown, ArrowUp, ArrowDown, X, MoreHorizontal, Trash2, Eye, FileText } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { updateQuotationStatus, deleteQuotation } from "./actions"
+import { generateQuotationPDF } from "@/lib/pdf-service"
 
 export type QuotationStatus = 'pending' | 'negotiating' | 'approved' | 'rejected' | 'on_hold'
 
@@ -20,10 +21,12 @@ interface Quotation {
   customer_company: string | null
   customer_phone: string | null
   customer_email: string | null
+  customer_address: string | null
   grand_total: number
   created_at: string
   pdf_url: string | null
   status: QuotationStatus
+  items_json: any[] | null
   profiles: { full_name: string }
 }
 
@@ -43,9 +46,10 @@ const statusLabels: Record<QuotationStatus, string> = {
   on_hold: "On Hold",
 }
 
-export default function QuotationsClient({ initialQuotations, activeFilters }: { initialQuotations: Quotation[], activeFilters?: { month?: string, year?: string, status?: string } }) {
+export default function QuotationsClient({ initialQuotations, activeFilters, settings }: { initialQuotations: Quotation[], activeFilters?: { month?: string, year?: string, status?: string }, settings?: any }) {
   const [search, setSearch] = useState("")
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const isMutating = useRef(false)
   
   const [sortField, setSortField] = useState<'created_at' | 'grand_total' | 'status' | 'customer_name' | 'salesperson'>('created_at')
@@ -132,6 +136,42 @@ export default function QuotationsClient({ initialQuotations, activeFilters }: {
       toast.error(err.message || "Failed to delete quotation")
     } finally {
       isMutating.current = false
+    }
+  }
+
+  const handleDownloadPDF = async (q: Quotation) => {
+    // If a public pdf_url exists, open it directly
+    if (q.pdf_url) {
+      window.open(q.pdf_url, '_blank')
+      return
+    }
+
+    // Otherwise regenerate from items_json stored in DB
+    if (!q.items_json || q.items_json.length === 0) {
+      toast.error("No items data found — PDF cannot be regenerated.")
+      return
+    }
+
+    setDownloadingId(q.id)
+    try {
+      toast.loading("Generating PDF...", { id: `pdf-${q.id}` })
+      await generateQuotationPDF({
+        quotation: {
+          ...q,
+          customer_address: q.customer_address || '',
+        },
+        items: q.items_json,
+        settings: settings || {},
+        user: { full_name: q.profiles?.full_name || 'Sales Team' },
+        selectedTerms: [],   // uses default terms from pdf-service
+        currency: 'INR',
+        validityData: { validityDays: 30 },
+      })
+      toast.success("PDF downloaded!", { id: `pdf-${q.id}` })
+    } catch (err: any) {
+      toast.error(err.message || "Failed to generate PDF", { id: `pdf-${q.id}` })
+    } finally {
+      setDownloadingId(null)
     }
   }
 
@@ -263,41 +303,41 @@ export default function QuotationsClient({ initialQuotations, activeFilters }: {
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none">
+                          <button
+                            disabled={downloadingId === q.id}
+                            className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none disabled:opacity-40"
+                          >
                             <MoreHorizontal className="h-4 w-4 text-gray-500" />
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="rounded-xl shadow-xl w-52">
-                          {q.pdf_url ? (
-                            <>
-                              <DropdownMenuItem asChild>
-                                <a
-                                  href={q.pdf_url}
-                                  download
-                                  className="flex items-center gap-2 cursor-pointer"
-                                >
-                                  <Download className="h-4 w-4 text-gray-500" />
-                                  Download PDF
-                                </a>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem asChild>
-                                <a
-                                  href={q.pdf_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-2 cursor-pointer"
-                                >
-                                  <Eye className="h-4 w-4 text-gray-500" />
-                                  View Quotation
-                                </a>
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                            </>
-                          ) : (
-                            <DropdownMenuItem disabled className="text-gray-400 text-xs">
-                              No PDF available
+                          {/* Download PDF — always available: opens pdf_url if stored, else regenerates from items_json */}
+                          <DropdownMenuItem
+                            onClick={() => handleDownloadPDF(q)}
+                            disabled={downloadingId === q.id}
+                            className="cursor-pointer"
+                          >
+                            <Download className="h-4 w-4 mr-2 text-gray-500" />
+                            {downloadingId === q.id ? 'Generating...' : 'Download PDF'}
+                          </DropdownMenuItem>
+
+                          {/* View Quotation — only when a stored pdf_url exists */}
+                          {q.pdf_url && (
+                            <DropdownMenuItem asChild>
+                              <a
+                                href={q.pdf_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 cursor-pointer"
+                              >
+                                <Eye className="h-4 w-4 text-gray-500" />
+                                View Quotation
+                              </a>
                             </DropdownMenuItem>
                           )}
+
+                          <DropdownMenuSeparator />
+
                           <DropdownMenuItem
                             onClick={() => handleDelete(q)}
                             className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
