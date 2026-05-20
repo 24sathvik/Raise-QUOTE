@@ -30,21 +30,28 @@ export default function CreateUserDialog() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    // Capture the form element BEFORE any await — e.currentTarget becomes
+    // null after React's synthetic event is recycled across the async gap.
+    const form = e.currentTarget
     setLoading(true)
 
-    const formData = new FormData(e.currentTarget)
+    const formData = new FormData(form)
     formData.append('role', role)
 
-    const result = await createSalesperson(formData)
-    setLoading(false)
-
-    if (result.error) {
-      toast.error(result.error)
-    } else {
-      toast.success('User created')
-      setOpen(false)
-      e.currentTarget.reset()
-      setRole('sales')
+    try {
+      const result = await createSalesperson(formData)
+      if (result.error) {
+        toast.error(result.error)
+      } else {
+        toast.success('User created successfully')
+        setOpen(false)
+        form.reset()
+        setRole('sales')
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Unexpected error')
+    } finally {
+      setLoading(false)
     }
   }
 
