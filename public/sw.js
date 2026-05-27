@@ -1,4 +1,6 @@
-const CACHE_VERSION = 'zyxen-v2';
+const urlParams = new URL(location).searchParams;
+const versionParam = urlParams.get('v') || 'v3';
+const CACHE_VERSION = `zyxen-${versionParam}`;
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `dynamic-${CACHE_VERSION}`;
 
@@ -75,6 +77,20 @@ self.addEventListener('fetch', (event) => {
   ) {
     event.respondWith(
       fetch(event.request).catch(() => caches.match('/offline'))
+    );
+    return;
+  }
+
+  // Rule 4.8 — Next.js JS chunks (Server Actions, Webpack chunks) always network first
+  if (url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/_next/data/')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(DYNAMIC_CACHE).then((cache) => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
     );
     return;
   }

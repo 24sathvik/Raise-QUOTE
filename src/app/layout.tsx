@@ -54,6 +54,9 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Use a build ID if provided, otherwise fallback to a generic version
+  const buildId = process.env.NEXT_PUBLIC_BUILD_ID || "v3";
+
   return (
     <html lang="en">
       <head>
@@ -81,8 +84,15 @@ export default function RootLayout({
             __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                  navigator.serviceWorker.register('/sw.js?v=${buildId}', { scope: '/' })
                     .catch(function(err) { console.warn('SW registration failed:', err); });
+                });
+                
+                let refreshing = false;
+                navigator.serviceWorker.addEventListener('controllerchange', function() {
+                  if (refreshing) return;
+                  refreshing = true;
+                  window.location.reload();
                 });
               }
             `,
