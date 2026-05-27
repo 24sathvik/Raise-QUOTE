@@ -159,6 +159,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     }))
   )
   const [currency, setCurrency] = useState<Currency>('INR')
+  const [note, setNote] = useState("")
 
   // Fetch next sequential quotation number via server action
   useEffect(() => {
@@ -195,6 +196,9 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         if (parsed.terms) {
           setTerms(parsed.terms)
         }
+        if (parsed.note) {
+          setNote(parsed.note)
+        }
       } catch (e) {
         localStorage.removeItem("quotation_draft")
       }
@@ -206,11 +210,11 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
     const timeoutId = setTimeout(() => {
       localStorage.setItem(
         "quotation_draft",
-        JSON.stringify({ _v: 'v3', items, customer, meta, discount, terms })
+        JSON.stringify({ _v: 'v3', items, customer, meta, discount, terms, note })
       )
     }, 1000)
     return () => clearTimeout(timeoutId)
-  }, [items, customer, meta, discount, terms])
+  }, [items, customer, meta, discount, terms, note])
 
   const totals = useMemo(() => {
     const subtotal = items.reduce((acc, item) => {
@@ -325,6 +329,7 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         ? t === "WARRANTY: One year warranty from the date of dispatch"
         : true
     })))
+    setNote("")
     localStorage.removeItem("quotation_draft")
   }
 
@@ -385,7 +390,8 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
         validityData: {
           validityDate: calculatedValidityDate,
           validityDays: meta.validity_days
-        }
+        },
+        note
       })
 
       // 3. Upload PDF via the shared /api/upload route
@@ -1098,6 +1104,21 @@ export default function QuotationBuilder({ initialProducts, settings, user }: Qu
                   </div>
                 </div>
               )}
+            </Card>
+
+            {/* Note Section */}
+            <Card className="border-none bg-white shadow-sm ring-1 ring-gray-100 rounded-2xl overflow-hidden">
+              <CardHeader className="border-b border-gray-50 p-6">
+                <CardTitle className="text-sm font-black uppercase tracking-widest text-gray-400">Note (Optional)</CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <textarea
+                  className="w-full min-h-[100px] rounded-xl border border-gray-100 bg-gray-50/50 p-4 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-black/5 transition-all resize-y"
+                  placeholder="Add any specific notes to be displayed above the Terms and Conditions..."
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </CardContent>
             </Card>
 
             {/* ── Terms & Conditions ──────────────────────────────────────────── */}

@@ -9,9 +9,10 @@ interface PDFData {
   selectedTerms?: { title: string; text: string }[]
   currency?: 'INR' | 'USD'
   validityData?: { validityDate?: string; validityDays?: number }
+  note?: string
 }
 
-export const generateQuotationPDF = async ({ quotation, items, settings, user, selectedTerms, currency = 'INR', validityData }: PDFData) => {
+export const generateQuotationPDF = async ({ quotation, items, settings, user, selectedTerms, currency = 'INR', validityData, note }: PDFData) => {
 
   const doc = new jsPDF({
     orientation: "portrait",
@@ -433,6 +434,27 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
   drawPageBorder()
   drawHeader(logoBase64)
   currentY = 55
+
+  if (note && note.trim() !== '') {
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(12)
+    doc.text("Note:", margin, currentY)
+    currentY += 8
+
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(10)
+    const splitNote = doc.splitTextToSize(note.trim(), pageWidth - (margin * 2))
+    
+    if (currentY + (splitNote.length * 5) > contentBottomLimit - 10) {
+      doc.addPage()
+      drawPageBorder()
+      drawHeader(logoBase64)
+      currentY = 55
+    }
+
+    doc.text(splitNote, margin, currentY)
+    currentY += (splitNote.length * 5) + 10
+  }
 
   doc.setFont("helvetica", "bold")
   doc.setFontSize(12)
