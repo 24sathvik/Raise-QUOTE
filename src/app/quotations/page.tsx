@@ -19,11 +19,20 @@ export default async function UserQuotationsPage() {
     .eq('id', user.id)
     .single()
 
-  const { data: quotations } = await supabase
+  let { data: quotations, error } = await supabase
     .from("quotations")
-    .select(`id, quotation_number, customer_name, customer_company, customer_phone, customer_email, grand_total, created_at, status, pdf_url`)
+    .select(`id, quotation_number, customer_name, customer_company, customer_phone, customer_email, grand_total, created_at, status, pdf_url, revision_number`)
     .eq("created_by", user.id)
     .order("created_at", { ascending: false })
+
+  if (error && error.message?.includes('revision_number')) {
+    const fallback = await supabase
+      .from("quotations")
+      .select(`id, quotation_number, customer_name, customer_company, customer_phone, customer_email, grand_total, created_at, status, pdf_url`)
+      .eq("created_by", user.id)
+      .order("created_at", { ascending: false })
+    quotations = fallback.data as any
+  }
 
   return (
     <QuotationsClient 

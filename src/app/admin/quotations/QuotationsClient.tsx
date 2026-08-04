@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { Search, Calendar, User, Download, ChevronDown, ArrowUp, ArrowDown, X, MoreHorizontal, Trash2, Eye, FileText } from "lucide-react"
+import { Search, Calendar, User, Download, ChevronDown, ArrowUp, ArrowDown, X, MoreHorizontal, Trash2, Eye, FileText, Pencil } from "lucide-react"
+import Link from "next/link"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
@@ -27,6 +28,7 @@ interface Quotation {
   pdf_url: string | null
   status: QuotationStatus
   items_json: any[] | null
+  revision_number?: number
   profiles: { full_name: string }
 }
 
@@ -260,7 +262,16 @@ export default function QuotationsClient({ initialQuotations, activeFilters, set
               ) : (
                 sorted.map((q) => (
                   <TableRow key={q.id}>
-                    <TableCell className="font-mono text-xs font-semibold">{q.quotation_number}</TableCell>
+                    <TableCell className="font-mono text-xs font-semibold">
+                      <div className="flex items-center gap-1.5">
+                        <span>{q.quotation_number}</span>
+                        {q.revision_number && q.revision_number > 0 ? (
+                          <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 text-[9px] font-bold px-1.5 py-0">
+                            Rev {q.revision_number}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </TableCell>
                     <TableCell><div className="font-medium">{q.customer_name}</div></TableCell>
                     <TableCell><div className="text-xs text-gray-500">{q.customer_company || "—"}</div></TableCell>
                     <TableCell><div className="text-xs text-gray-500">{q.customer_phone || "—"}</div></TableCell>
@@ -311,6 +322,14 @@ export default function QuotationsClient({ initialQuotations, activeFilters, set
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="rounded-xl shadow-xl w-52">
+                          {/* Edit Quotation */}
+                          <DropdownMenuItem asChild>
+                            <Link href={`/?edit=${q.id}`} className="flex items-center gap-2 cursor-pointer">
+                              <Pencil className="h-4 w-4 mr-2 text-gray-500" />
+                              Edit Quotation
+                            </Link>
+                          </DropdownMenuItem>
+
                           {/* Download PDF — always available: opens pdf_url if stored, else regenerates from items_json */}
                           <DropdownMenuItem
                             onClick={() => handleDownloadPDF(q)}

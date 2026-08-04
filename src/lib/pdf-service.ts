@@ -8,7 +8,7 @@ interface PDFData {
   user: any
   selectedTerms?: { title: string; text: string }[]
   currency?: 'INR' | 'USD'
-  validityData?: { validityDate?: string; validityDays?: number }
+  validityData?: { validityDate?: string; validityDays?: number; issueDate?: string }
   note?: string
 }
 
@@ -153,8 +153,14 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       }
 
       const toAddress = `To\n${quotation.customer_name}${quotation.customer_company ? '\n' + quotation.customer_company : ''}${quotation.customer_address ? '\n' + quotation.customer_address : ''}`;
-      const quoteNo = quotation.quotation_number;
-      const dateStr = new Date(quotation.created_at || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+      const revisionNum = quotation.revision_number ? Number(quotation.revision_number) : 0;
+      const quoteNo = revisionNum > 0 ? `${quotation.quotation_number}(${revisionNum})` : quotation.quotation_number;
+      
+      const issueDateRaw = validityData?.issueDate || quotation.created_at || Date.now();
+      const issueDateObj = new Date(issueDateRaw);
+      const dateStr = !isNaN(issueDateObj.getTime())
+        ? issueDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
+        : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
       const validStr = validityDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
 
       autoTable(doc, {
@@ -332,21 +338,60 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       checkAddPage(20)
       doc.setFont("helvetica", "bold")
       doc.setFontSize(10)
+      doc.setTextColor(0)
       doc.text("Specifications:", margin, currentY)
       currentY += 6
-      doc.setFont("helvetica", "normal")
       doc.setFontSize(9)
 
+      // Calculate colon position dynamically based on longest spec key
+      let colonX = margin + 55
+      doc.setFont("helvetica", "bold")
       item.specs.forEach((s: { key: string; value: string }) => {
-        checkAddPage(6)
-        doc.text("•", margin + 3, currentY)
-        doc.setFont("helvetica", "bold")
-        doc.text(s.key, margin + 8, currentY)
-        doc.setFont("helvetica", "normal")
-        doc.text(s.value.startsWith(":") ? s.value : `: ${s.value}`, margin + 55, currentY)
-        currentY += 5
+        const cleanK = (s.key || '').replace(/:\s*$/, '').trim()
+        const kWidth = doc.getTextWidth(cleanK)
+        if (margin + 8 + kWidth + 4 > colonX) {
+          colonX = Math.min(margin + 8 + kWidth + 4, margin + 70)
+        }
       })
-      currentY += 8
+
+      const keyColWidth = colonX - (margin + 8) - 2
+      const valueStartX = colonX + 3.5
+      const maxValueWidth = (pageWidth - margin) - valueStartX
+
+      item.specs.forEach((s: { key: string; value: string }) => {
+        const cleanKey = (s.key || '').replace(/:\s*$/, '').trim()
+        const cleanValue = (s.value || '').replace(/^:\s*/, '').trim()
+
+        doc.setFont("helvetica", "bold")
+        doc.setFontSize(9)
+        const splitKey = doc.splitTextToSize(cleanKey, keyColWidth)
+
+        doc.setFont("helvetica", "normal")
+        doc.setFontSize(9)
+        const splitValue = doc.splitTextToSize(cleanValue, maxValueWidth)
+
+        const lineCount = Math.max(splitKey.length, splitValue.length, 1)
+        const itemHeight = lineCount * 4.5
+
+        checkAddPage(itemHeight + 2)
+
+        doc.setFont("helvetica", "normal")
+        doc.setFontSize(9)
+        doc.setTextColor(0)
+        doc.text("•", margin + 3, currentY)
+
+        doc.setFont("helvetica", "bold")
+        doc.setFontSize(9)
+        doc.text(splitKey, margin + 8, currentY)
+
+        doc.setFont("helvetica", "normal")
+        doc.setFontSize(9)
+        doc.text(":", colonX, currentY)
+        doc.text(splitValue, valueStartX, currentY)
+
+        currentY += itemHeight + 1
+      })
+      currentY += 6
     }
 
     const unitPrice = item.price + (item.selectedAddons?.reduce((s: number, a: any) => s + a.price, 0) || 0)
@@ -375,12 +420,15 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
     const tableBody: any[] = []
 
+    const locale = currency === 'USD' ? 'en-US' : 'en-IN'
+    const fractionDigits = currency === 'USD' ? 2 : 0
+
     // Primary item row
     tableBody.push([
       { content: "01", styles: { halign: "center", valign: "middle", fontSize: 10 } },
       { content: descContent, styles: { halign: "left", valign: "middle", fontSize: 10, cellPadding: 4 } },
       { content: "1", styles: { halign: "center", valign: "middle", fontSize: 10 } },
-      { content: `${currencySymbol} ${unitPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}/-`, styles: { halign: "right", fontStyle: "bold", valign: "middle", fontSize: 11, cellPadding: 4 } }
+      { content: `${currencySymbol} ${unitPrice.toLocaleString(locale, { minimumFractionDigits: fractionDigits, maximumFractionDigits: 2 })}/-`, styles: { halign: "right", fontStyle: "bold", valign: "middle", fontSize: 11, cellPadding: 4 } }
     ])
 
     // ✅ FIX: Extra line items with serial numbers and bold styling
@@ -391,7 +439,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
           { content: serialNo, styles: { halign: "center", valign: "middle", fontSize: 10, fontStyle: "bold" } },
           { content: li.description, styles: { halign: "left", valign: "middle", fontSize: 10, fontStyle: "bold", cellPadding: 4 } },
           { content: "1", styles: { halign: "center", valign: "middle", fontSize: 10, fontStyle: "bold" } },
-          { content: li.price > 0 ? `${currencySymbol} ${Number(li.price).toLocaleString('en-IN')}/-` : 'Included', styles: { halign: "right", fontStyle: "bold", valign: "middle", fontSize: 10 } }
+          { content: li.price > 0 ? `${currencySymbol} ${Number(li.price).toLocaleString(locale, { minimumFractionDigits: fractionDigits, maximumFractionDigits: 2 })}/-` : 'Included', styles: { halign: "right", fontStyle: "bold", valign: "middle", fontSize: 10 } }
         ])
       })
     }
@@ -518,7 +566,10 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 8, { align: "right" })
   }
 
-  const pdfName = `${quotation.quotation_number}_Quotation.pdf`
+  const revisionNum = quotation.revision_number ? Number(quotation.revision_number) : 0
+  const pdfName = revisionNum > 0
+    ? `${quotation.quotation_number}_Quotation(${revisionNum}).pdf`
+    : `${quotation.quotation_number}_Quotation.pdf`
   doc.save(pdfName)
 
   return doc.output("blob")
