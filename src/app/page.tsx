@@ -19,12 +19,14 @@ export default async function SalesPage(props: { searchParams: Promise<{ [key: s
     .from('profiles')
     .select('id, full_name, email, role, active, phone')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
 
   const userProfile = profileResponse.data
 
+  const editParam = searchParams.edit || searchParams.id || searchParams.quotationId || searchParams.editId
+
   // If user is admin and not editing a quote, redirect to admin panel
-  if (userProfile?.role === 'admin' && !searchParams.edit) {
+  if (userProfile?.role === 'admin' && !editParam) {
     redirect('/admin/quotations')
   }
 
@@ -38,14 +40,17 @@ export default async function SalesPage(props: { searchParams: Promise<{ [key: s
       .from('settings')
       .select('*')
       .eq('id', 1)
-      .single()
+      .maybeSingle()
   ])
 
   let editingQuotation = null
-  if (searchParams.edit) {
-    const result = await getQuotationById(searchParams.edit)
+  if (editParam) {
+    const result = await getQuotationById(editParam)
     if (result?.data) {
       editingQuotation = result.data
+    } else if (userProfile?.role === 'admin') {
+      // If admin attempted to edit a non-existent quotation, redirect back to admin list
+      redirect('/admin/quotations')
     }
   }
 

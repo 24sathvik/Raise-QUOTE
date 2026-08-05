@@ -41,68 +41,61 @@ export async function getNextQuotationNumber() {
   }
 }
 
-export async function getQuotationById(id: string) {
+export async function getQuotationById(idOrNumber: string) {
+  if (!idOrNumber) return { error: 'No quotation identifier provided' }
   const supabase = createAdminClient()
-  let { data: quotation, error } = await supabase
-    .from('quotations')
-    .select(`
-      id,
-      quotation_number,
-      created_by,
-      customer_name,
-      customer_company,
-      customer_phone,
-      customer_email,
-      customer_address,
-      items_json,
-      subtotal,
-      tax_amount,
-      total_amount,
-      discount_total,
-      grand_total,
-      status,
-      pdf_url,
-      created_at,
-      revision_number
-    `)
-    .eq('id', id)
-    .single()
+  const trimmed = idOrNumber.trim()
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)
 
-  if (error && error.message?.includes('revision_number')) {
-    const fallback = await supabase
-      .from('quotations')
-      .select(`
-        id,
-        quotation_number,
-        created_by,
-        customer_name,
-        customer_company,
-        customer_phone,
-        customer_email,
-        customer_address,
-        items_json,
-        subtotal,
-        tax_amount,
-        total_amount,
-        discount_total,
-        grand_total,
-        status,
-        pdf_url,
-        created_at
-      `)
-      .eq('id', id)
-      .single()
-    
-    if (fallback.data) {
-      const items = Array.isArray(fallback.data.items_json) ? fallback.data.items_json : []
-      const metaRev = (fallback.data.items_json as any)?._metadata?.revision_number
-      quotation = { ...fallback.data, revision_number: metaRev ?? 0 } as any
-    }
-    error = fallback.error
+  let query = supabase.from('quotations').select('*')
+  if (isUUID) {
+    query = query.eq('id', trimmed)
+  } else {
+    query = query.eq('quotation_number', trimmed)
   }
 
-  if (error) return { error: error.message }
-  return { data: quotation }
+  let { data: quotation, error } = await query.maybeSingle()
+
+  if (!quotation && isUUID) {
+    // Also try matching quotation_number in case an ID was stored as a string matching quotation_number
+    const byNum = await supabase.from('quotations').select('*').eq('quotation_number', trimmed).maybeSingle()
+    if (byNum.data) {
+      quotation = byNum.data
+      error = null
+    }
+  }
+
+  if (error) {
+    console.error('Error fetching quotation by ID:', error)
+    return { error: error.message }
+  }
+
+  if (!quotation) {
+    return { error: 'Quotation not found' }
+  }
+
+  // Normalize quotation fields for safe client consumption
+  const items = Array.isArray(quotation.items_json)
+    ? quotation.items_json
+    : (typeof quotation.items_json === 'string'
+        ? (() => { try { return JSON.parse(quotation.items_json) } catch { return [] } })()
+        : [])
+
+  const metaRev = (quotation.items_json as any)?._metadata?.revision_number
+  const normalizedQuotation = {
+    ...quotation,
+    items_json: items,
+    revision_number: quotation.revision_number !== undefined && quotation.revision_number !== null
+      ? Number(quotation.revision_number)
+      : (metaRev !== undefined ? Number(metaRev) : 0),
+    subtotal: Number(quotation.subtotal || 0),
+    discount_total: Number(quotation.discount_total || 0),
+    tax_amount: Number(quotation.tax_amount ?? quotation.tax_total ?? 0),
+    total_amount: Number(quotation.total_amount ?? quotation.grand_total ?? 0),
+    grand_total: Number(quotation.grand_total || 0),
+  }
+
+  return { data: normalizedQuotation }
 }
 
 export async function saveQuotation(data: {
@@ -123,7 +116,24 @@ export async function saveQuotation(data: {
   revision_number?: number
 }) {
   const supabase = createAdminClient()
-  let insertData = { ...data, revision_number: data.revision_number || 0 }
+  let insertData: any = {
+    quotation_number: data.quotation_number,
+    created_by: data.created_by,
+    customer_name: data.customer_name,
+    customer_company: data.customer_company || null,
+    customer_phone: data.customer_phone || null,
+    customer_email: data.customer_email || null,
+    customer_address: data.customer_address || null,
+    items_json: data.items_json,
+    subtotal: data.subtotal,
+    tax_amount: data.tax_amount,
+    total_amount: data.total_amount,
+    discount_total: data.discount_total,
+    grand_total: data.grand_total,
+    status: data.status || 'pending',
+    revision_number: data.revision_number || 0
+  }
+
   let { data: quotation, error } = await supabase
     .from('quotations')
     .insert(insertData)
@@ -172,7 +182,7 @@ export async function saveQuotation(data: {
   return { data: quotation }
 }
 
-export async function updateQuotation(id: string, data: {
+export async function updateQuotation(idOrNumber: string, data: {
   quotation_number?: string
   customer_name: string
   customer_company?: string
@@ -181,46 +191,53 @@ export async function updateQuotation(id: string, data: {
   customer_address?: string
   items_json: any[]
   subtotal: number
-  tax_amount: number
-  total_amount: number
+  tax_amount?: number
+  total_amount?: number
   discount_total: number
   grand_total: number
   status?: string
   revision_number: number
 }) {
+  if (!idOrNumber) return { error: 'No quotation identifier provided for update' }
   const supabase = createAdminClient()
+  const trimmed = idOrNumber.trim()
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)
+
   const updateFields: any = {
     customer_name: data.customer_name,
-    customer_company: data.customer_company,
-    customer_phone: data.customer_phone,
-    customer_email: data.customer_email,
-    customer_address: data.customer_address,
+    customer_company: data.customer_company || null,
+    customer_phone: data.customer_phone || null,
+    customer_email: data.customer_email || null,
+    customer_address: data.customer_address || null,
     items_json: data.items_json,
     subtotal: data.subtotal,
-    tax_amount: data.tax_amount,
-    total_amount: data.total_amount,
     discount_total: data.discount_total,
     grand_total: data.grand_total,
     revision_number: data.revision_number,
+    ...(data.tax_amount !== undefined ? { tax_amount: data.tax_amount } : {}),
+    ...(data.total_amount !== undefined ? { total_amount: data.total_amount } : {}),
     ...(data.status ? { status: data.status } : {}),
     ...(data.quotation_number ? { quotation_number: data.quotation_number } : {})
   }
 
-  let { data: quotation, error } = await supabase
-    .from('quotations')
-    .update(updateFields)
-    .eq('id', id)
-    .select()
-    .single()
+  let updateQuery = supabase.from('quotations').update(updateFields)
+  if (isUUID) {
+    updateQuery = updateQuery.eq('id', trimmed)
+  } else {
+    updateQuery = updateQuery.eq('quotation_number', trimmed)
+  }
+
+  let { data: quotation, error } = await updateQuery.select().single()
 
   if (error && error.message?.includes('revision_number')) {
     const { revision_number, ...fallbackFields } = updateFields
-    const fallback = await supabase
-      .from('quotations')
-      .update(fallbackFields)
-      .eq('id', id)
-      .select()
-      .single()
+    let fallbackQuery = supabase.from('quotations').update(fallbackFields)
+    if (isUUID) {
+      fallbackQuery = fallbackQuery.eq('id', trimmed)
+    } else {
+      fallbackQuery = fallbackQuery.eq('quotation_number', trimmed)
+    }
+    const fallback = await fallbackQuery.select().single()
     quotation = fallback.data ? { ...fallback.data, revision_number: data.revision_number } : null
     error = fallback.error
   }

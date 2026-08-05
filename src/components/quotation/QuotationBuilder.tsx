@@ -146,12 +146,33 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
         ? JSON.parse(editingQuotation.items_json)
         : editingQuotation.items_json
       const itemsList = Array.isArray(raw) ? raw : (raw?.items || [])
-      return itemsList.map((item: QuotationItem) => {
-        const source = initialProducts.find((p: Product) => p.id === item.product_id)
+      return itemsList.map((item: any, idx: number) => {
+        const source = initialProducts.find((p: Product) => p.id === item.product_id || p.name === item.name)
+        const basePrice = Number(item.base_price ?? (source?.price || item.price || 0))
+        const mrp = Number(item.mrp ?? (source ? Math.round(source.price * (1 + MARGIN_PERCENTAGE / 100)) : (item.price || basePrice || 0)))
+        const price = Number(item.price ?? mrp ?? basePrice ?? 0)
+        const qty = Number(item.qty ?? item.quantity ?? 1)
         return {
-          ...item,
-          availableLineItems: item.availableLineItems ?? (source?.line_items ? [...source.line_items] : []),
-          selectedLineItems: item.selectedLineItems ?? (source?.line_items ? [...source.line_items] : []),
+          id: item.id || `edit-item-${idx}-${Math.random().toString(36).slice(2)}`,
+          product_id: item.product_id || source?.id || `product-${idx}`,
+          name: item.name || source?.name || 'Unnamed Product',
+          description: item.description || source?.description || '',
+          qty: isNaN(qty) || qty < 1 ? 1 : qty,
+          base_price: isNaN(basePrice) ? 0 : basePrice,
+          mrp: isNaN(mrp) ? (isNaN(price) ? 0 : price) : mrp,
+          price: isNaN(price) ? 0 : price,
+          image_url: item.image_url || source?.image_url || null,
+          sku: item.sku || source?.sku || '',
+          selectedAddons: Array.isArray(item.selectedAddons) ? item.selectedAddons : [],
+          specs: Array.isArray(item.specs) ? item.specs : (source?.specs || []),
+          features: Array.isArray(item.features) ? item.features : (source?.features || []),
+          image_format: item.image_format || source?.image_format || 'wide',
+          availableLineItems: Array.isArray(item.availableLineItems)
+            ? item.availableLineItems
+            : (source?.line_items ? [...source.line_items] : []),
+          selectedLineItems: Array.isArray(item.selectedLineItems)
+            ? item.selectedLineItems
+            : (item.availableLineItems ? [...item.availableLineItems] : (source?.line_items ? [...source.line_items] : [])),
         }
       })
     } catch {
@@ -448,7 +469,8 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
       if (isEditMode) {
         revNumber = (editingQuotation.revision_number || 0) + 1
         const targetNumber = meta.number || editingQuotation.quotation_number
-        const result = await updateQuotation(editingQuotation.id, {
+        const targetId = editingQuotation.id || editingQuotation.quotation_number
+        const result = await updateQuotation(targetId, {
           quotation_number: targetNumber,
           customer_name: customer.name,
           customer_company: customer.company,
@@ -716,7 +738,7 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
               </h1>
               <p className="text-sm font-medium text-gray-400">
                 {isEditMode
-                  ? `Modifying quotation ${editingQuotation.quotation_number} - Base quote number will be preserved`
+                  ? `Modifying quotation ${editingQuotation?.quotation_number || ''} - Base quote number will be preserved`
                   : "Generate professional pharmaceutical product quotes"}
               </p>
             </div>
@@ -727,7 +749,7 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
             </div>
           </header>
 
-          {isEditMode && (
+          {isEditMode && editingQuotation && (
             <div className="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 rounded-2xl bg-amber-50 border border-amber-200 shadow-sm">
               <div className="flex items-center gap-3.5">
                 <div className="h-10 w-10 shrink-0 rounded-xl bg-black text-white flex items-center justify-center font-black text-xs uppercase tracking-wider">
@@ -1123,13 +1145,13 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
                                   </div>
                                   <div className="text-right text-[9px] font-bold">
                                     <span className="text-green-600">
-                                      Suggested: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString(undefined, { minimumFractionDigits: currency === 'USD' ? 2 : 0, maximumFractionDigits: 2 })}
+                                      Suggested: {currency === 'INR' ? '₹' : '$'}{(item.mrp ?? item.price ?? 0).toLocaleString(undefined, { minimumFractionDigits: currency === 'USD' ? 2 : 0, maximumFractionDigits: 2 })}
                                     </span>
                                   </div>
                                 </div>
                               </TableCell>
                               <TableCell className="text-right text-sm font-black text-black">
-                                {currency === 'INR' ? '₹' : '$'}{((item.price + (item.selectedAddons?.reduce((s, a) => s + (a.price || 0), 0) || 0) + (item.selectedLineItems?.reduce((s, l) => s + (l.price || 0), 0) || 0)) * item.qty).toLocaleString(undefined, { minimumFractionDigits: currency === 'USD' ? 2 : 0, maximumFractionDigits: 2 })}
+                                {currency === 'INR' ? '₹' : '$'}{(((item.price || 0) + (item.selectedAddons?.reduce((s, a) => s + (a.price || 0), 0) || 0) + (item.selectedLineItems?.reduce((s, l) => s + (l.price || 0), 0) || 0)) * (item.qty || 1)).toLocaleString(undefined, { minimumFractionDigits: currency === 'USD' ? 2 : 0, maximumFractionDigits: 2 })}
                               </TableCell>
                               <TableCell className="px-8">
                                 <button
@@ -1214,7 +1236,7 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
 
                             <div className="flex justify-end text-[9px] font-bold pt-2 border-t border-gray-50">
                               <span className="text-green-600">
-                                Suggested MRP: {currency === 'INR' ? '₹' : '$'}{item.mrp.toLocaleString(undefined, { minimumFractionDigits: currency === 'USD' ? 2 : 0, maximumFractionDigits: 2 })}
+                                Suggested MRP: {currency === 'INR' ? '₹' : '$'}{(item.mrp ?? item.price ?? 0).toLocaleString(undefined, { minimumFractionDigits: currency === 'USD' ? 2 : 0, maximumFractionDigits: 2 })}
                               </span>
                             </div>
 
@@ -1276,7 +1298,7 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
                             <div className="flex items-center justify-between pt-2 border-t border-gray-50">
                               <span className="text-xs font-bold text-gray-400 uppercase">Subtotal</span>
                               <span className="text-lg font-black text-black">
-                                {currency === 'INR' ? '₹' : '$'}{((item.price + (item.selectedAddons?.reduce((s, a) => s + (a.price || 0), 0) || 0) + (item.selectedLineItems?.reduce((s, l) => s + (l.price || 0), 0) || 0)) * item.qty).toLocaleString(undefined, { minimumFractionDigits: currency === 'USD' ? 2 : 0, maximumFractionDigits: 2 })}
+                                {currency === 'INR' ? '₹' : '$'}{(((item.price || 0) + (item.selectedAddons?.reduce((s, a) => s + (a.price || 0), 0) || 0) + (item.selectedLineItems?.reduce((s, l) => s + (l.price || 0), 0) || 0)) * (item.qty || 1)).toLocaleString(undefined, { minimumFractionDigits: currency === 'USD' ? 2 : 0, maximumFractionDigits: 2 })}
                               </span>
                             </div>
                           </div>
@@ -1439,7 +1461,7 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
                 {saving
                   ? "Saving & Generating PDF..."
                   : isEditMode
-                    ? `Update & Download PDF (Rev ${(editingQuotation.revision_number || 0) + 1})`
+                    ? `Update & Download PDF (Rev ${(editingQuotation?.revision_number || 0) + 1})`
                     : "Save & Download PDF"}
               </Button>
             </div>
