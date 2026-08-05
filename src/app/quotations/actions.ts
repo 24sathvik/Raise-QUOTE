@@ -43,59 +43,93 @@ export async function getNextQuotationNumber() {
 
 export async function getQuotationById(idOrNumber: string) {
   if (!idOrNumber) return { error: 'No quotation identifier provided' }
-  const supabase = createAdminClient()
-  const trimmed = idOrNumber.trim()
-  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)
+  try {
+    const trimmed = idOrNumber.trim()
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)
 
-  let query = supabase.from('quotations').select('*')
-  if (isUUID) {
-    query = query.eq('id', trimmed)
-  } else {
-    query = query.eq('quotation_number', trimmed)
-  }
+    let quotation: any = null
+    let error: any = null
 
-  let { data: quotation, error } = await query.maybeSingle()
-
-  if (!quotation && isUUID) {
-    // Also try matching quotation_number in case an ID was stored as a string matching quotation_number
-    const byNum = await supabase.from('quotations').select('*').eq('quotation_number', trimmed).maybeSingle()
-    if (byNum.data) {
-      quotation = byNum.data
-      error = null
+    // 1. Try server admin client first
+    try {
+      const supabase = createAdminClient()
+      let query = supabase.from('quotations').select('*')
+      if (isUUID) {
+        query = query.eq('id', trimmed)
+      } else {
+        query = query.eq('quotation_number', trimmed)
+      }
+      const res = await query.maybeSingle()
+      quotation = res.data
+      error = res.error
+    } catch (adminErr) {
+      console.warn('createAdminClient error, falling back:', adminErr)
     }
+
+    // 2. If not found or error, try with server cookie client
+    if (!quotation) {
+      try {
+        const { createClient } = await import('@/lib/supabase/server')
+        const userClient = await createClient()
+        let query = userClient.from('quotations').select('*')
+        if (isUUID) {
+          query = query.eq('id', trimmed)
+        } else {
+          query = query.eq('quotation_number', trimmed)
+        }
+        const userRes = await query.maybeSingle()
+        if (userRes.data) {
+          quotation = userRes.data
+          error = null
+        }
+      } catch (userErr) {
+        console.warn('userClient error in getQuotationById:', userErr)
+      }
+    }
+
+    if (!quotation && isUUID) {
+      try {
+        const supabase = createAdminClient()
+        const byNum = await supabase.from('quotations').select('*').eq('quotation_number', trimmed).maybeSingle()
+        if (byNum.data) {
+          quotation = byNum.data
+          error = null
+        }
+      } catch {
+        // Ignore fallback error
+      }
+    }
+
+    if (!quotation) {
+      return { error: error?.message || 'Quotation not found' }
+    }
+
+    // Normalize quotation fields for safe client consumption
+    const items = Array.isArray(quotation.items_json)
+      ? quotation.items_json
+      : (typeof quotation.items_json === 'string'
+          ? (() => { try { return JSON.parse(quotation.items_json) } catch { return [] } })()
+          : [])
+
+    const metaRev = (quotation.items_json as any)?._metadata?.revision_number
+    const normalizedQuotation = {
+      ...quotation,
+      items_json: items,
+      revision_number: quotation.revision_number !== undefined && quotation.revision_number !== null
+        ? Number(quotation.revision_number)
+        : (metaRev !== undefined ? Number(metaRev) : 0),
+      subtotal: Number(quotation.subtotal || 0),
+      discount_total: Number(quotation.discount_total || 0),
+      tax_amount: Number(quotation.tax_amount ?? quotation.tax_total ?? 0),
+      total_amount: Number(quotation.total_amount ?? quotation.grand_total ?? 0),
+      grand_total: Number(quotation.grand_total || 0),
+    }
+
+    return { data: JSON.parse(JSON.stringify(normalizedQuotation)) }
+  } catch (err: any) {
+    console.error('Unhandled exception in getQuotationById:', err)
+    return { error: err.message || 'Failed to fetch quotation' }
   }
-
-  if (error) {
-    console.error('Error fetching quotation by ID:', error)
-    return { error: error.message }
-  }
-
-  if (!quotation) {
-    return { error: 'Quotation not found' }
-  }
-
-  // Normalize quotation fields for safe client consumption
-  const items = Array.isArray(quotation.items_json)
-    ? quotation.items_json
-    : (typeof quotation.items_json === 'string'
-        ? (() => { try { return JSON.parse(quotation.items_json) } catch { return [] } })()
-        : [])
-
-  const metaRev = (quotation.items_json as any)?._metadata?.revision_number
-  const normalizedQuotation = {
-    ...quotation,
-    items_json: items,
-    revision_number: quotation.revision_number !== undefined && quotation.revision_number !== null
-      ? Number(quotation.revision_number)
-      : (metaRev !== undefined ? Number(metaRev) : 0),
-    subtotal: Number(quotation.subtotal || 0),
-    discount_total: Number(quotation.discount_total || 0),
-    tax_amount: Number(quotation.tax_amount ?? quotation.tax_total ?? 0),
-    total_amount: Number(quotation.total_amount ?? quotation.grand_total ?? 0),
-    grand_total: Number(quotation.grand_total || 0),
-  }
-
-  return { data: normalizedQuotation }
 }
 
 export async function saveQuotation(data: {

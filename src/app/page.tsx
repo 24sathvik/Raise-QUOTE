@@ -15,13 +15,17 @@ export default async function SalesPage(props: { searchParams: Promise<{ [key: s
     redirect('/auth/login')
   }
 
-  const profileResponse = await supabase
-    .from('profiles')
-    .select('id, full_name, email, role, active, phone')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  const userProfile = profileResponse.data
+  let userProfile: any = null
+  try {
+    const profileResponse = await supabase
+      .from('profiles')
+      .select('id, full_name, email, role, active, phone')
+      .eq('id', user.id)
+      .maybeSingle()
+    userProfile = profileResponse.data
+  } catch (e) {
+    console.error('Error fetching profile:', e)
+  }
 
   const editParam = searchParams.edit || searchParams.id || searchParams.quotationId || searchParams.editId
 
@@ -30,37 +34,47 @@ export default async function SalesPage(props: { searchParams: Promise<{ [key: s
     redirect('/admin/quotations')
   }
 
-  const [productsResponse, settingsResponse] = await Promise.all([
-    supabase
-      .from('products')
-      .select('id, name, description, price, image_url, sku, specs, features, category, addons, image_format, line_items')
-      .eq('active', true)
-      .order('name'),
-    supabase
-      .from('settings')
-      .select('*')
-      .eq('id', 1)
-      .maybeSingle()
-  ])
+  let productsData: any[] = []
+  let settingsData: any = null
+
+  try {
+    const [productsResponse, settingsResponse] = await Promise.all([
+      supabase
+        .from('products')
+        .select('id, name, description, price, image_url, sku, specs, features, category, addons, image_format, line_items')
+        .eq('active', true)
+        .order('name'),
+      supabase
+        .from('settings')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle()
+    ])
+    productsData = productsResponse.data || []
+    settingsData = settingsResponse.data || null
+  } catch (e) {
+    console.error('Error fetching products/settings:', e)
+  }
 
   let editingQuotation = null
   if (editParam) {
-    const result = await getQuotationById(editParam)
-    if (result?.data) {
-      editingQuotation = result.data
-    } else if (userProfile?.role === 'admin') {
-      // If admin attempted to edit a non-existent quotation, redirect back to admin list
-      redirect('/admin/quotations')
+    try {
+      const result = await getQuotationById(editParam)
+      if (result?.data) {
+        editingQuotation = result.data
+      }
+    } catch (e) {
+      console.error('Error fetching quotation for edit:', e)
     }
   }
 
   return (
     <div className="min-h-screen bg-gray-50/50">
       <QuotationBuilder
-        initialProducts={productsResponse.data || []}
-        settings={settingsResponse.data || null}
-        user={userProfile}
-        editingQuotation={editingQuotation}
+        initialProducts={JSON.parse(JSON.stringify(productsData))}
+        settings={settingsData ? JSON.parse(JSON.stringify(settingsData)) : null}
+        user={userProfile ? JSON.parse(JSON.stringify(userProfile)) : null}
+        editingQuotation={editingQuotation ? JSON.parse(JSON.stringify(editingQuotation)) : null}
       />
     </div>
   )
