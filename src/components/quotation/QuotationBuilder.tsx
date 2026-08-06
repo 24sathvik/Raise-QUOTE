@@ -222,7 +222,6 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
     date: (editingQuotation?.created_at || '').split("T")[0] || new Date().toISOString().split("T")[0],
     validity_days: 30,
   })
-  const [discount, setDiscount] = useState<number>(editingQuotation?.discount_total || 0)
   const [isProductOpen, setIsProductOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -256,7 +255,6 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
         date: (editingQuotation.created_at || '').split("T")[0] || new Date().toISOString().split("T")[0],
         validity_days: 30,
       })
-      setDiscount(editingQuotation.discount_total || 0)
       if (editingQuotation.items_json?.[0]?._currency) {
         setCurrency(editingQuotation.items_json[0]._currency as Currency)
       }
@@ -297,7 +295,6 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
         if (parsed.meta?.date) {
           setMeta(prev => ({ ...prev, date: parsed.meta.date, validity_days: parsed.meta.validity_days || 30 }))
         }
-        setDiscount(parsed.discount || 0)
         if (parsed.currency) {
           setCurrency(parsed.currency)
         }
@@ -319,11 +316,11 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
     const timeoutId = setTimeout(() => {
       localStorage.setItem(
         "quotation_draft",
-        JSON.stringify({ _v: 'v4', items, customer, meta, discount, terms, note, currency })
+        JSON.stringify({ _v: 'v4', items, customer, meta, terms, note, currency })
       )
     }, 1000)
     return () => clearTimeout(timeoutId)
-  }, [isEditMode, items, customer, meta, discount, terms, note, currency])
+  }, [isEditMode, items, customer, meta, terms, note, currency])
 
   const totals = useMemo(() => {
     const subtotalRaw = items.reduce((acc, item) => {
@@ -333,10 +330,9 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
     }, 0)
     const subtotal = currency === 'USD' ? Number(subtotalRaw.toFixed(2)) : Math.round(subtotalRaw)
     const tax_amount = 0
-    const grandTotalRaw = Math.max(0, subtotal - discount)
-    const grand_total = currency === 'USD' ? Number(grandTotalRaw.toFixed(2)) : Math.round(grandTotalRaw)
+    const grand_total = subtotal
     return { subtotal, tax_amount, grand_total }
-  }, [items, discount, currency])
+  }, [items, currency])
 
   const addItem = useCallback((product: Product) => {
     const isUSD = currency === 'USD'
@@ -519,7 +515,7 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
           subtotal: totals.subtotal,
           tax_amount: 0,
           total_amount: totals.grand_total,
-          discount_total: discount,
+          discount_total: 0,
           grand_total: totals.grand_total,
           revision_number: revNumber,
           currency
@@ -541,7 +537,7 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
           subtotal: totals.subtotal,
           tax_amount: 0,
           total_amount: totals.grand_total,
-          discount_total: discount,
+          discount_total: 0,
           grand_total: totals.grand_total,
           status: 'pending',
           revision_number: 0,
@@ -601,7 +597,6 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
         localStorage.removeItem("quotation_draft")
         setItems([])
         setCustomer({ name: "", company: "", phone: "", email: "", address: "" })
-        setDiscount(0)
         setNote("")
         setTerms(DEFAULT_TERMS.map((t, i) => ({
           id: `term-${i}`,
@@ -947,7 +942,6 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
                                 price: Math.round(li.price * conversionRate)
                               }))
                             })))
-                            setDiscount(prev => Math.round(prev * conversionRate))
                             setCurrency('INR')
                           }
                         }}
@@ -980,7 +974,6 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
                                 price: Number((li.price / conversionRate).toFixed(2))
                               }))
                             })))
-                            setDiscount(prev => Number((prev / conversionRate).toFixed(2)))
                             setCurrency('USD')
                           }
                         }}
@@ -1266,7 +1259,7 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
                   </div>
                 </div>
 
-                {/* Summary & Adjustments Section */}
+                {/* Summary Section */}
                 {items.length > 0 && (
                   <div className="bg-gray-50/50 p-6 sm:p-8 border-t border-gray-50">
                     <div className="ml-auto max-w-sm space-y-4">
@@ -1277,55 +1270,9 @@ export default function QuotationBuilder({ initialProducts, settings, user, edit
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-gray-400">
-                        <span>Adjustment / Discount</span>
-                        <div className="relative">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">
-                            -{currency === 'INR' ? '₹' : '$'}
-                          </span>
-                          <Input
-                            type="number"
-                            step={currency === 'USD' ? "0.01" : "1"}
-                            className="h-9 w-32 rounded-lg border-gray-200 bg-white pl-7 pr-2 text-right font-bold text-black focus:bg-white text-xs"
-                            value={discount || ""}
-                            onChange={(e) => {
-                              const val = e.target.value
-                              setDiscount(val === "" ? 0 : parseFloat(val) || 0)
-                            }}
-                            placeholder="0"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-gray-400">
-                        <span>Target Grand Total</span>
-                        <div className="relative">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">
-                            {currency === 'INR' ? '₹' : '$'}
-                          </span>
-                          <Input
-                            type="number"
-                            step={currency === 'USD' ? "0.01" : "1"}
-                            className="h-9 w-32 rounded-lg border-gray-200 bg-white pl-7 pr-2 text-right font-bold text-black focus:bg-white text-xs"
-                            value={totals.grand_total || ""}
-                            onChange={(e) => {
-                              const val = e.target.value
-                              if (val === "") {
-                                setDiscount(0)
-                              } else {
-                                const target = parseFloat(val) || 0
-                                const diff = totals.subtotal - target
-                                setDiscount(currency === 'USD' ? Math.max(0, Number(diff.toFixed(2))) : Math.max(0, Math.round(diff)))
-                              }
-                            }}
-                            placeholder={totals.grand_total.toString()}
-                          />
-                        </div>
-                      </div>
-
                       <div className="h-px bg-gray-200/80" />
                       <div className="flex items-end justify-between">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-black">Final Total</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-black">Grand Total</span>
                         <span className="text-2xl sm:text-3xl font-black tracking-tight text-black">
                           {currency === 'INR' ? '₹' : '$'}{totals.grand_total.toLocaleString(undefined, { minimumFractionDigits: currency === 'USD' ? 2 : 0, maximumFractionDigits: 2 })}
                         </span>
