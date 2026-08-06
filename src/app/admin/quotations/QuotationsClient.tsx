@@ -1,12 +1,12 @@
 "use client"
 
-import { useState, useRef } from "react"
-import { Search, Calendar, User, Download, ChevronDown, ArrowUp, ArrowDown, X, MoreHorizontal, Trash2, Eye, FileText, Pencil } from "lucide-react"
+import { useState, useRef, useEffect } from "react"
+import { Search, Calendar, User, Download, ChevronDown, ArrowUp, ArrowDown, X, Trash2, Eye, FileText, Pencil, AlertTriangle, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -33,11 +33,11 @@ interface Quotation {
 }
 
 const statusColors: Record<QuotationStatus, string> = {
-  pending: "bg-gray-100 text-gray-800 hover:bg-gray-200 border-gray-200",
-  negotiating: "bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-200",
-  approved: "bg-green-100 text-green-800 hover:bg-green-200 border-green-200",
-  rejected: "bg-red-100 text-red-800 hover:bg-red-200 border-red-200",
-  on_hold: "bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-200",
+  pending: "bg-gray-100 text-gray-800 border-gray-200",
+  negotiating: "bg-blue-100 text-blue-800 border-blue-200",
+  approved: "bg-green-100 text-green-800 border-green-200",
+  rejected: "bg-red-100 text-red-800 border-red-200",
+  on_hold: "bg-amber-100 text-amber-800 border-amber-200",
 }
 
 const statusLabels: Record<QuotationStatus, string> = {
@@ -49,9 +49,12 @@ const statusLabels: Record<QuotationStatus, string> = {
 }
 
 export default function QuotationsClient({ initialQuotations, activeFilters, settings }: { initialQuotations: Quotation[], activeFilters?: { month?: string, year?: string, status?: string }, settings?: any }) {
+  const [quotations, setQuotations] = useState<Quotation[]>(initialQuotations)
   const [search, setSearch] = useState("")
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [deletingQuotation, setDeletingQuotation] = useState<Quotation | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const isMutating = useRef(false)
   
   const [sortField, setSortField] = useState<'created_at' | 'grand_total' | 'status' | 'customer_name' | 'salesperson'>('created_at')
@@ -59,7 +62,11 @@ export default function QuotationsClient({ initialQuotations, activeFilters, set
 
   const router = useRouter()
 
-  const filtered = initialQuotations.filter(
+  useEffect(() => {
+    setQuotations(initialQuotations)
+  }, [initialQuotations])
+
+  const filtered = quotations.filter(
     (q) =>
       q.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
       q.quotation_number?.toLowerCase().includes(search.toLowerCase()) ||
@@ -99,15 +106,6 @@ export default function QuotationsClient({ initialQuotations, activeFilters, set
     return sortDir === 'asc' ? <ArrowUp className="w-3 h-3 inline-block ml-1" /> : <ArrowDown className="w-3 h-3 inline-block ml-1" />
   }
 
-  const activeFilterCount = Object.values(activeFilters || {}).filter(Boolean).length
-  const filterSummary = activeFilters?.month && activeFilters?.year 
-    ? `Showing quotations for ${new Date(Number(activeFilters.year), Number(activeFilters.month) - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}`
-    : activeFilters?.status === 'pending_negotiating'
-    ? `Showing Pending / Negotiating quotations`
-    : activeFilters?.status
-    ? `Showing ${statusLabels[activeFilters.status as QuotationStatus]} quotations`
-    : null
-
   const handleStatusChange = async (id: string, newStatus: QuotationStatus) => {
     if (isMutating.current) return
     isMutating.current = true
@@ -115,6 +113,7 @@ export default function QuotationsClient({ initialQuotations, activeFilters, set
     try {
       const result = await updateQuotationStatus(id, newStatus)
       if (result?.error) throw new Error(result.error)
+      setQuotations(prev => prev.map(item => item.id === id ? { ...item, status: newStatus } : item))
       toast.success("Status updated successfully")
       router.refresh()
     } catch (error: any) {
@@ -125,53 +124,76 @@ export default function QuotationsClient({ initialQuotations, activeFilters, set
     }
   }
 
-  const handleDelete = async (q: Quotation) => {
-    if (!confirm(`Delete quotation ${q.quotation_number} for ${q.customer_name}? This cannot be undone.`)) return
-    if (isMutating.current) return
-    isMutating.current = true
+  const handleConfirmDelete = async () => {
+    if (!deletingQuotation) return
+    setIsDeleting(true)
+    const target = deletingQuotation
     try {
-      const result = await deleteQuotation(q.id)
+      const result = await deleteQuotation(target.id)
       if (result?.error) throw new Error(result.error)
-      toast.success(`Quotation ${q.quotation_number} deleted`)
+      setQuotations(prev => prev.filter(q => q.id !== target.id))
+      toast.success(`Quotation ${target.quotation_number} deleted successfully`)
+      setDeletingQuotation(null)
       router.refresh()
     } catch (err: any) {
       toast.error(err.message || "Failed to delete quotation")
     } finally {
-      isMutating.current = false
+      setIsDeleting(false)
     }
   }
 
   const handleDownloadPDF = async (q: Quotation) => {
-    // If a public pdf_url exists, open it directly
-    if (q.pdf_url) {
-      window.open(q.pdf_url, '_blank')
-      return
-    }
-
-    // Otherwise regenerate from items_json stored in DB
-    if (!q.items_json || q.items_json.length === 0) {
-      toast.error("No items data found — PDF cannot be regenerated.")
-      return
-    }
-
     setDownloadingId(q.id)
     try {
-      toast.loading("Generating PDF...", { id: `pdf-${q.id}` })
+      const rawNumber = (q.quotation_number || 'RLE-101').replace(/\(\d+\)$/, '').trim()
+      const revNumber = q.revision_number ? Number(q.revision_number) : 0
+      const pdfName = revNumber > 0 ? `${rawNumber}_Quotation(${revNumber}).pdf` : `${rawNumber}_Quotation.pdf`
+
+      if (q.pdf_url) {
+        try {
+          const res = await fetch(q.pdf_url)
+          if (res.ok) {
+            const blob = await res.blob()
+            const pdfBlob = new Blob([blob], { type: 'application/pdf' })
+            const url = window.URL.createObjectURL(pdfBlob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = pdfName
+            document.body.appendChild(a)
+            a.click()
+            setTimeout(() => {
+              window.URL.revokeObjectURL(url)
+              if (a.parentNode) document.body.removeChild(a)
+            }, 1500)
+            toast.success(`Quotation ${q.quotation_number} downloaded`)
+            return
+          }
+        } catch (e) {
+          console.warn("Direct blob fetch failed, falling back to generator:", e)
+        }
+      }
+
+      if (!q.items_json || (Array.isArray(q.items_json) && q.items_json.length === 0)) {
+        toast.error("No item data stored to generate PDF")
+        return
+      }
+
+      const items = Array.isArray(q.items_json)
+        ? q.items_json
+        : (typeof q.items_json === 'string' ? JSON.parse(q.items_json) : [])
+
+      const currency = items[0]?._currency || 'INR'
+
       await generateQuotationPDF({
-        quotation: {
-          ...q,
-          customer_address: q.customer_address || '',
-        },
-        items: q.items_json,
+        quotation: q,
+        items,
         settings: settings || {},
-        user: { full_name: q.profiles?.full_name || 'Sales Team' },
-        selectedTerms: [],   // uses default terms from pdf-service
-        currency: 'INR',
-        validityData: { validityDays: 30 },
+        user: { full_name: q.profiles?.full_name || 'Admin', role: 'admin' },
+        currency
       })
-      toast.success("PDF downloaded!", { id: `pdf-${q.id}` })
+      toast.success(`Quotation ${q.quotation_number} downloaded`)
     } catch (err: any) {
-      toast.error(err.message || "Failed to generate PDF", { id: `pdf-${q.id}` })
+      toast.error(err.message || "Failed to generate PDF")
     } finally {
       setDownloadingId(null)
     }
@@ -179,90 +201,59 @@ export default function QuotationsClient({ initialQuotations, activeFilters, set
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Quotation Tracking</h1>
-        <p className="text-muted-foreground">Monitor all quotations generated by your sales team.</p>
-      </div>
-      {activeFilterCount > 0 && (
-        <div className="flex items-center justify-between rounded-xl bg-amber-50 px-4 py-3 border border-amber-200">
-          <span className="font-semibold text-sm text-amber-800">{filterSummary}</span>
-          <button 
-            onClick={() => router.push('/admin/quotations')}
-            className="flex items-center gap-1 text-xs font-bold text-amber-900 bg-amber-100 px-3 py-1.5 rounded-lg hover:bg-amber-200 transition-colors"
-          >
-            Clear Filter <X className="w-3 h-3" />
-          </button>
+      {/* Header & Search */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight text-black">Quotations Management</h2>
+          <p className="text-xs text-muted-foreground">View, manage, and edit all team quotations</p>
         </div>
-      )}
 
-      <div className="flex flex-col gap-4 md:flex-row md:items-center justify-between">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search by customer, number, or salesperson..."
-            className="pl-9 h-11"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="md:hidden flex items-center gap-2">
-          <span className="text-sm font-semibold whitespace-nowrap text-gray-500">Sort by:</span>
-          <Select value={`${sortField}-${sortDir}`} onValueChange={(val) => {
-            const [f, d] = val.split('-') as [typeof sortField, 'asc' | 'desc']
-            setSortField(f)
-            setSortDir(d)
-          }}>
-            <SelectTrigger className="h-10 bg-white">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="created_at-desc">Date (Newest)</SelectItem>
-              <SelectItem value="created_at-asc">Date (Oldest)</SelectItem>
-              <SelectItem value="grand_total-desc">Amount (Highest)</SelectItem>
-              <SelectItem value="grand_total-asc">Amount (Lowest)</SelectItem>
-              <SelectItem value="status-desc">Status (Approved first)</SelectItem>
-              <SelectItem value="customer_name-asc">Customer A-Z</SelectItem>
-              <SelectItem value="salesperson-asc">Salesperson A-Z</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-3">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search customer, number, rep..."
+              className="pl-9 h-10 rounded-xl bg-white border-gray-200 text-xs font-medium"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-black px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-black/90 transition-all whitespace-nowrap"
+          >
+            New Quotation
+          </Link>
         </div>
       </div>
-      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+
+      {/* Table Container */}
+      <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader className="bg-gray-50/50">
-              <TableRow>
-                <TableHead className="whitespace-nowrap">Number</TableHead>
-                <TableHead className="whitespace-nowrap cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('customer_name')}>
-                  Customer <SortIcon field="customer_name" />
-                </TableHead>
-                <TableHead className="whitespace-nowrap">Company</TableHead>
-                <TableHead className="whitespace-nowrap">Phone</TableHead>
-                <TableHead className="whitespace-nowrap">Email</TableHead>
-                <TableHead className="whitespace-nowrap cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('salesperson')}>
-                  Salesperson <SortIcon field="salesperson" />
-                </TableHead>
-                <TableHead className="whitespace-nowrap cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('grand_total')}>
-                  Amount <SortIcon field="grand_total" />
-                </TableHead>
-                <TableHead className="whitespace-nowrap cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('status')}>
-                  Status <SortIcon field="status" />
-                </TableHead>
-                <TableHead className="whitespace-nowrap cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('created_at')}>
-                  Date <SortIcon field="created_at" />
-                </TableHead>
-                <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
+              <TableRow className="border-gray-100">
+                <TableHead className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Quote #</TableHead>
+                <TableHead className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Customer</TableHead>
+                <TableHead className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Company</TableHead>
+                <TableHead className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Sales Rep</TableHead>
+                <TableHead className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Amount</TableHead>
+                <TableHead className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Status</TableHead>
+                <TableHead className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Date</TableHead>
+                <TableHead className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sorted.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center">No quotations found.</TableCell>
+                  <TableCell colSpan={8} className="h-32 text-center text-sm font-bold text-gray-400">
+                    {search ? "No matching quotations found." : "No quotations created yet."}
+                  </TableCell>
                 </TableRow>
               ) : (
                 sorted.map((q) => (
-                  <TableRow key={q.id}>
-                    <TableCell className="font-mono text-xs font-semibold">
+                  <TableRow key={q.id} className="hover:bg-gray-50/50 transition-colors border-gray-50">
+                    <TableCell className="px-6 py-4 font-mono text-xs font-bold text-black">
                       <div className="flex items-center gap-1.5">
                         <span>{q.quotation_number}</span>
                         {q.revision_number && q.revision_number > 0 ? (
@@ -272,100 +263,99 @@ export default function QuotationsClient({ initialQuotations, activeFilters, set
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell><div className="font-medium">{q.customer_name}</div></TableCell>
-                    <TableCell><div className="text-xs text-gray-500">{q.customer_company || "—"}</div></TableCell>
-                    <TableCell><div className="text-xs text-gray-500">{q.customer_phone || "—"}</div></TableCell>
-                    <TableCell><div className="text-xs text-gray-500">{q.customer_email || "—"}</div></TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <User className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-sm">{q.profiles?.full_name || "Unknown"}</span>
+                    <TableCell className="px-6 py-4">
+                      <div className="text-xs font-bold text-black">{q.customer_name}</div>
+                    </TableCell>
+                    <TableCell className="px-6 py-4">
+                      <div className="text-xs font-medium text-gray-500">{q.customer_company || "—"}</div>
+                    </TableCell>
+                    <TableCell className="px-6 py-4">
+                      <div className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
+                        <User className="h-3 w-3 text-gray-400" />
+                        <span>{q.profiles?.full_name || "Unknown"}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="font-bold">₹{q.grand_total?.toLocaleString()}</TableCell>
-                    <TableCell>
+                    <TableCell className="px-6 py-4 font-black text-xs text-black">
+                      ₹{q.grand_total?.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="px-6 py-4">
                       <DropdownMenu>
-                        <DropdownMenuTrigger disabled={updatingId === q.id} className="focus:outline-none disabled:opacity-50">
-                          <Badge variant="outline" className={`flex items-center gap-1 cursor-pointer transition-colors ${statusColors[q.status || 'pending']}`}>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            disabled={updatingId === q.id}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-bold text-[11px] transition-all cursor-pointer disabled:opacity-50 ${statusColors[q.status || 'pending']}`}
+                          >
                             {statusLabels[q.status || 'pending']}
                             <ChevronDown className="h-3 w-3 opacity-50" />
-                          </Badge>
+                          </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
+                        <DropdownMenuContent align="start" className="w-[180px] rounded-xl p-1.5 shadow-xl border border-gray-100 bg-white">
                           {(Object.keys(statusLabels) as QuotationStatus[]).map((status) => (
                             <DropdownMenuItem
                               key={status}
                               onClick={() => handleStatusChange(q.id, status)}
-                              className="cursor-pointer font-medium"
+                              className={`flex items-center gap-2 rounded-lg px-3 py-2 cursor-pointer font-bold text-xs transition-all ${
+                                q.status === status ? statusColors[status] : "text-gray-600 hover:bg-gray-50 focus:bg-gray-50"
+                              }`}
                             >
-                              <div className={`w-2 h-2 rounded-full mr-2 ${status === 'pending' ? 'bg-gray-500' : status === 'negotiating' ? 'bg-blue-500' : status === 'approved' ? 'bg-green-500' : status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                              <div className={`h-2 w-2 rounded-full ${status === 'pending' ? 'bg-gray-500' : status === 'negotiating' ? 'bg-blue-500' : status === 'approved' ? 'bg-green-500' : status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`} />
                               {statusLabels[status]}
                             </DropdownMenuItem>
                           ))}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <div className="flex items-center gap-2">
+                    <TableCell className="px-6 py-4 text-gray-400">
+                      <div className="flex items-center gap-1.5 text-xs font-bold">
                         <Calendar className="h-3 w-3" />
-                        <span suppressHydrationWarning className="text-xs">{new Date(q.created_at).toLocaleDateString()}</span>
+                        <span suppressHydrationWarning>{new Date(q.created_at).toLocaleDateString()}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            disabled={downloadingId === q.id}
-                            className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none disabled:opacity-40"
+                    <TableCell className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {/* Edit Button */}
+                        <Link
+                          href={`/?edit=${q.id}`}
+                          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-bold text-black shadow-sm transition-all hover:bg-gray-50 hover:border-black/20"
+                          title="Edit Quotation"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          <span>Edit</span>
+                        </Link>
+
+                        {/* Download PDF Button */}
+                        <button
+                          onClick={() => handleDownloadPDF(q)}
+                          disabled={downloadingId === q.id}
+                          className="inline-flex items-center gap-1 rounded-lg bg-black px-2.5 py-1.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-black/90 disabled:opacity-50 cursor-pointer"
+                          title="Download PDF"
+                        >
+                          <Download className="h-3 w-3" />
+                          <span>{downloadingId === q.id ? 'PDF...' : 'PDF'}</span>
+                        </button>
+
+                        {/* View PDF Button (if stored URL exists) */}
+                        {q.pdf_url && (
+                          <a
+                            href={q.pdf_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1.5 text-xs font-bold text-gray-600 shadow-sm transition-all hover:bg-gray-50 hover:text-black"
+                            title="View PDF"
                           >
-                            <MoreHorizontal className="h-4 w-4 text-gray-500" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="rounded-xl shadow-xl w-52">
-                          {/* Edit Quotation */}
-                          <DropdownMenuItem asChild>
-                            <Link href={`/?edit=${q.id}`} className="flex items-center gap-2 cursor-pointer">
-                              <Pencil className="h-4 w-4 mr-2 text-gray-500" />
-                              Edit Quotation
-                            </Link>
-                          </DropdownMenuItem>
+                            <Eye className="h-3.5 w-3.5" />
+                          </a>
+                        )}
 
-                          {/* Download PDF — always available: opens pdf_url if stored, else regenerates from items_json */}
-                          <DropdownMenuItem
-                            onClick={() => handleDownloadPDF(q)}
-                            disabled={downloadingId === q.id}
-                            className="cursor-pointer"
-                          >
-                            <Download className="h-4 w-4 mr-2 text-gray-500" />
-                            {downloadingId === q.id ? 'Generating...' : 'Download PDF'}
-                          </DropdownMenuItem>
-
-                          {/* View Quotation — only when a stored pdf_url exists */}
-                          {q.pdf_url && (
-                            <DropdownMenuItem asChild>
-                              <a
-                                href={q.pdf_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-2 cursor-pointer"
-                              >
-                                <Eye className="h-4 w-4 text-gray-500" />
-                                View Quotation
-                              </a>
-                            </DropdownMenuItem>
-                          )}
-
-                          <DropdownMenuSeparator />
-
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(q)}
-                            className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete Quotation
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                        {/* Delete Button */}
+                        <button
+                          onClick={() => setDeletingQuotation(q)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-transparent p-1.5 text-xs font-bold text-red-500 hover:bg-red-50 hover:border-red-200 transition-all cursor-pointer"
+                          title="Delete Quotation"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -374,6 +364,49 @@ export default function QuotationsClient({ initialQuotations, activeFilters, set
           </Table>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deletingQuotation} onOpenChange={(open) => !open && !isDeleting && setDeletingQuotation(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 mb-3 text-red-600">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <DialogTitle className="text-center text-lg font-bold text-gray-900">Delete Quotation</DialogTitle>
+            <DialogDescription className="text-center text-sm text-gray-500 mt-2">
+              Are you sure you want to delete quotation <span className="font-semibold text-gray-900">{deletingQuotation?.quotation_number}</span> for <span className="font-semibold text-gray-900">{deletingQuotation?.customer_name}</span>? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 sm:space-x-2">
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={() => setDeletingQuotation(null)}
+              className="w-full sm:w-auto inline-flex justify-center items-center rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={handleConfirmDelete}
+              className="w-full sm:w-auto inline-flex justify-center items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-700 transition-colors disabled:opacity-50"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Deleting...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  <span>Delete Quotation</span>
+                </>
+              )}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

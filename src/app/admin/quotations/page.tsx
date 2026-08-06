@@ -59,5 +59,23 @@ export default async function QuotationsPage(props: { searchParams: Promise<{ [k
     status: searchParams.status
   }
 
-  return <QuotationsClient initialQuotations={(quotations as any) || []} activeFilters={activeFilters} settings={settings} />
+  const normalizedQuotations = (quotations || []).map((q: any) => {
+    let rev = 0
+    if (q.revision_number !== undefined && q.revision_number !== null) {
+      rev = Number(q.revision_number)
+    } else if (Array.isArray(q.items_json) && q.items_json[0]?._rev !== undefined) {
+      rev = Number(q.items_json[0]._rev)
+    } else if (q.quotation_number) {
+      const match = q.quotation_number.match(/\((\d+)\)$/)
+      if (match) rev = parseInt(match[1], 10) || 0
+    }
+    const cleanNumber = (q.quotation_number || 'RLE-101').replace(/\(\d+\)$/, '').trim()
+    return {
+      ...q,
+      quotation_number: cleanNumber,
+      revision_number: rev,
+    }
+  })
+
+  return <QuotationsClient initialQuotations={normalizedQuotations as any} activeFilters={activeFilters} settings={settings} />
 }

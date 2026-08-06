@@ -10,6 +10,7 @@ export async function updateQuotationStatus(id: string, status: string) {
     .eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/quotations')
+  revalidatePath('/admin/quotations')
   return { success: true }
 }
 
@@ -111,13 +112,34 @@ export async function getQuotationById(idOrNumber: string) {
           ? (() => { try { return JSON.parse(quotation.items_json) } catch { return [] } })()
           : [])
 
-    const metaRev = (quotation.items_json as any)?._metadata?.revision_number
+    // Extract revision from:
+    // 1. DB column `revision_number`
+    // 2. Embedded metadata `items[0]?._rev` or `_metadata?.revision_number`
+    // 3. String in `quotation_number` like RLE-101(1) or RLE-101(2)
+    let parsedRev = 0
+    if (quotation.revision_number !== undefined && quotation.revision_number !== null) {
+      parsedRev = Number(quotation.revision_number)
+    } else if (items.length > 0 && items[0]?._rev !== undefined) {
+      parsedRev = Number(items[0]._rev)
+    } else if ((quotation.items_json as any)?._metadata?.revision_number !== undefined) {
+      parsedRev = Number((quotation.items_json as any)._metadata.revision_number)
+    } else if (quotation.quotation_number) {
+      const match = quotation.quotation_number.match(/\((\d+)\)$/)
+      if (match) {
+        parsedRev = parseInt(match[1], 10) || 0
+      }
+    }
+
+    // Strip revision suffix from base number for clean UI presentation
+    const baseNumber = quotation.quotation_number
+      ? quotation.quotation_number.replace(/\(\d+\)$/, '').trim()
+      : 'RLE-101'
+
     const normalizedQuotation = {
       ...quotation,
+      quotation_number: baseNumber,
       items_json: items,
-      revision_number: quotation.revision_number !== undefined && quotation.revision_number !== null
-        ? Number(quotation.revision_number)
-        : (metaRev !== undefined ? Number(metaRev) : 0),
+      revision_number: parsedRev,
       subtotal: Number(quotation.subtotal || 0),
       discount_total: Number(quotation.discount_total || 0),
       tax_amount: Number(quotation.tax_amount ?? quotation.tax_total ?? 0),
@@ -148,8 +170,16 @@ export async function saveQuotation(data: {
   grand_total: number
   status: string
   revision_number?: number
+  currency?: string
 }) {
   const supabase = createAdminClient()
+  const rev = data.revision_number || 0
+
+  // Embed revision & currency metadata in items_json so it survives even if DB table lacks column
+  const enrichedItems = Array.isArray(data.items_json)
+    ? data.items_json.map((it, idx) => (idx === 0 ? { ...it, _rev: rev, _currency: data.currency || 'INR' } : it))
+    : data.items_json
+
   let insertData: any = {
     quotation_number: data.quotation_number,
     created_by: data.created_by,
@@ -158,14 +188,14 @@ export async function saveQuotation(data: {
     customer_phone: data.customer_phone || null,
     customer_email: data.customer_email || null,
     customer_address: data.customer_address || null,
-    items_json: data.items_json,
+    items_json: enrichedItems,
     subtotal: data.subtotal,
     tax_amount: data.tax_amount,
     total_amount: data.total_amount,
     discount_total: data.discount_total,
     grand_total: data.grand_total,
     status: data.status || 'pending',
-    revision_number: data.revision_number || 0
+    revision_number: rev,
   }
 
   let { data: quotation, error } = await supabase
@@ -181,7 +211,7 @@ export async function saveQuotation(data: {
       .insert(fallbackData)
       .select()
       .single()
-    quotation = fallback.data
+    quotation = fallback.data ? { ...fallback.data, revision_number: rev } : null
     error = fallback.error
   }
 
@@ -202,10 +232,10 @@ export async function saveQuotation(data: {
         .insert(fallbackData)
         .select()
         .single()
-      quotation = retryFallback.data
+      quotation = retryFallback.data ? { ...retryFallback.data, revision_number: rev } : null
       error = retryFallback.error
     } else {
-      quotation = retry.data
+      quotation = retry.data ? { ...retry.data, revision_number: rev } : null
       error = retry.error
     }
   }
@@ -213,7 +243,7 @@ export async function saveQuotation(data: {
   if (error) return { error: error.message }
   revalidatePath('/quotations')
   revalidatePath('/admin/quotations')
-  return { data: quotation }
+  return { data: quotation ? { ...quotation, revision_number: rev } : null }
 }
 
 export async function updateQuotation(idOrNumber: string, data: {
@@ -231,11 +261,17 @@ export async function updateQuotation(idOrNumber: string, data: {
   grand_total: number
   status?: string
   revision_number: number
+  currency?: string
 }) {
   if (!idOrNumber) return { error: 'No quotation identifier provided for update' }
   const supabase = createAdminClient()
   const trimmed = idOrNumber.trim()
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)
+
+  // Embed revision & currency metadata in items_json
+  const enrichedItems = Array.isArray(data.items_json)
+    ? data.items_json.map((it, idx) => (idx === 0 ? { ...it, _rev: data.revision_number, _currency: data.currency || 'INR' } : it))
+    : data.items_json
 
   const updateFields: any = {
     customer_name: data.customer_name,
@@ -243,7 +279,7 @@ export async function updateQuotation(idOrNumber: string, data: {
     customer_phone: data.customer_phone || null,
     customer_email: data.customer_email || null,
     customer_address: data.customer_address || null,
-    items_json: data.items_json,
+    items_json: enrichedItems,
     subtotal: data.subtotal,
     discount_total: data.discount_total,
     grand_total: data.grand_total,
@@ -279,7 +315,7 @@ export async function updateQuotation(idOrNumber: string, data: {
   if (error) return { error: error.message }
   revalidatePath('/quotations')
   revalidatePath('/admin/quotations')
-  return { data: quotation }
+  return { data: quotation ? { ...quotation, revision_number: data.revision_number } : null }
 }
 
 export async function updateQuotationPdfUrl(id: string, pdf_url: string) {
@@ -287,6 +323,18 @@ export async function updateQuotationPdfUrl(id: string, pdf_url: string) {
   const { error } = await supabase
     .from('quotations')
     .update({ pdf_url })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/quotations')
+  revalidatePath('/admin/quotations')
+  return { success: true }
+}
+
+export async function deleteQuotation(id: string) {
+  const supabase = createAdminClient()
+  const { error } = await supabase
+    .from('quotations')
+    .delete()
     .eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/quotations')

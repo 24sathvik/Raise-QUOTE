@@ -47,15 +47,14 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
         .select(`
           id,
           quotation_number,
+          revision_number,
           customer_name,
           grand_total,
           created_at,
           pdf_url,
+          items_json,
           profiles!created_by (full_name)
         `)
-
-      // RLS Policy handles filtering automatically
-      // if (user?.role !== 'admin') { ... } removed
 
       const { data, error } = await query.order("created_at", { ascending: false })
 
@@ -168,26 +167,48 @@ export default function QuotationsList({ user, userId }: { user: any, userId?: s
                       {new Date(q.created_at).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="px-8 text-right">
-                      {q.pdf_url ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <a
-                            href={q.pdf_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-9 gap-2 rounded-xl border-gray-100 font-bold hover:bg-gray-50"
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                              View PDF
-                            </Button>
-                          </a>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-400">No PDF</span>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            const rawNumber = (q.quotation_number || 'RLE-101').replace(/\(\d+\)$/, '').trim()
+                            const revNumber = q.revision_number ? Number(q.revision_number) : 0
+                            const pdfName = revNumber > 0 ? `${rawNumber}_Quotation(${revNumber}).pdf` : `${rawNumber}_Quotation.pdf`
+
+                            if (q.pdf_url) {
+                              try {
+                                const res = await fetch(q.pdf_url)
+                                if (res.ok) {
+                                  const blob = await res.blob()
+                                  const pdfBlob = new Blob([blob], { type: 'application/pdf' })
+                                  const url = window.URL.createObjectURL(pdfBlob)
+                                  const a = document.createElement('a')
+                                  a.href = url
+                                  a.download = pdfName
+                                  document.body.appendChild(a)
+                                  a.click()
+                                  setTimeout(() => {
+                                    window.URL.revokeObjectURL(url)
+                                    if (a.parentNode) document.body.removeChild(a)
+                                  }, 1500)
+                                  toast.success(`Quotation ${q.quotation_number} downloaded`)
+                                  return
+                                }
+                              } catch (e) {
+                                console.warn("Blob download failed, opening url:", e)
+                                window.open(q.pdf_url, '_blank')
+                                return
+                              }
+                            }
+                            toast.error("PDF is not available for this quotation")
+                          }}
+                          className="h-9 gap-2 rounded-xl border-gray-100 font-bold hover:bg-gray-50"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Download PDF
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

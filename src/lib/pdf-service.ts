@@ -12,8 +12,16 @@ interface PDFData {
   note?: string
 }
 
-export const generateQuotationPDF = async ({ quotation, items, settings, user, selectedTerms, currency = 'INR', validityData, note }: PDFData) => {
-
+export const generateQuotationPDF = async ({
+  quotation,
+  items,
+  settings,
+  user,
+  selectedTerms,
+  currency = 'INR',
+  validityData,
+  note
+}: PDFData) => {
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -28,6 +36,8 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
   const currencySymbol = currency === 'INR' ? 'Rs.' : '$'
   const currencyLabel = currency === 'INR' ? 'INR' : 'USD'
+  const locale = currency === 'USD' ? 'en-US' : 'en-IN'
+  const fractionDigits = currency === 'USD' ? 2 : 0
 
   const drawPageBorder = () => {
     doc.setDrawColor(0, 82, 156)
@@ -42,7 +52,12 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     doc.setFont("helvetica", "bold")
     doc.setFontSize(8)
     doc.setTextColor(0)
-    doc.text("Write us: info@raiselabequip.com / sales@raiselabequip.com | Contact: +91 91777 70365", pageWidth / 2, pageHeight - 14.5, { align: "center" })
+    doc.text(
+      "Write us: info@raiselabequip.com / sales@raiselabequip.com | Contact: +91 91777 70365",
+      pageWidth / 2,
+      pageHeight - 14.5,
+      { align: "center" }
+    )
   }
 
   const drawHeader = (logoBase64: string) => {
@@ -73,14 +88,13 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     console.warn("Could not load quotation logo", e)
   }
 
-  const itemImages: Record<string, { base64: string; isWide: boolean; width: number; height: number }> = {}
+  const itemImages: Record<string, { base64: string; width: number; height: number }> = {}
   const imagePromises = items
     .filter(item => item.image_url)
     .map(async (item) => {
       try {
-        const { base64, width, height } = await getBase64ImageWithDimensions(item.image_url!)
-        const isWide = width > height * 1.3
-        itemImages[item.id] = { base64, isWide, width, height }
+        const data = await getBase64ImageWithDimensions(item.image_url!)
+        itemImages[item.id] = data
       } catch (e) {
         console.warn(`Could not load item image for ${item.id}`, e)
       }
@@ -105,32 +119,6 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     return false
   }
 
-  const estimateWideBlockHeight = (imageData: { base64: string; width: number; height: number } | undefined, features: string[]): number => {
-    let height = 0
-    if (imageData?.base64) {
-      const maxWidth = pageWidth - (margin * 2)
-      const maxHeight = 70
-      const ratio = Math.min(maxWidth / imageData.width, maxHeight / imageData.height)
-      height += imageData.height * ratio + 8
-    }
-    height += 16
-    doc.setFontSize(9)
-    features.forEach((f: string) => {
-      const splitFeature = doc.splitTextToSize(f, pageWidth - (margin * 2) - 10)
-      height += splitFeature.length * 4.5
-    })
-    height += 5
-    return height
-  }
-
-  const estimateCommercialTableHeight = (descContent: string, addons: any[]): number => {
-    const descColWidth = pageWidth - (margin * 2) - 15 - 15 - 50
-    doc.setFontSize(10)
-    const descLines = doc.splitTextToSize(descContent, descColWidth).length
-    const rowHeight = Math.max(descLines * 5 + 8, 15)
-    return 10 + rowHeight + 20
-  }
-
   items.forEach((item, index) => {
     if (index > 0) {
       doc.addPage()
@@ -144,7 +132,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
         ? new Date(validityData.validityDate)
         : (quotation.validity_date
           ? new Date(quotation.validity_date)
-          : new Date(quotation.created_at || Date.now()));
+          : new Date(quotation.created_at || Date.now()))
 
       if (isNaN(validityDate.getTime())) {
         const d = new Date(quotation.created_at || Date.now())
@@ -152,16 +140,17 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
         validityDate.setTime(d.getTime())
       }
 
-      const toAddress = `To\n${quotation.customer_name}${quotation.customer_company ? '\n' + quotation.customer_company : ''}${quotation.customer_address ? '\n' + quotation.customer_address : ''}`;
-      const revisionNum = quotation.revision_number ? Number(quotation.revision_number) : 0;
-      const quoteNo = revisionNum > 0 ? `${quotation.quotation_number}(${revisionNum})` : quotation.quotation_number;
-      
-      const issueDateRaw = validityData?.issueDate || quotation.created_at || Date.now();
-      const issueDateObj = new Date(issueDateRaw);
+      const toAddress = `To\n${quotation.customer_name || ''}${quotation.customer_company ? '\n' + quotation.customer_company : ''}${quotation.customer_address ? '\n' + quotation.customer_address : ''}`
+      const rawNumber = (quotation.quotation_number || 'RLE-101').replace(/\(\d+\)$/, '').trim()
+      const revisionNum = quotation.revision_number ? Number(quotation.revision_number) : 0
+      const quoteNo = revisionNum > 0 ? `${rawNumber}(${revisionNum})` : rawNumber
+
+      const issueDateRaw = validityData?.issueDate || quotation.created_at || Date.now()
+      const issueDateObj = new Date(issueDateRaw)
       const dateStr = !isNaN(issueDateObj.getTime())
         ? issueDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
-        : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
-      const validStr = validityDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+        : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
+      const validStr = validityDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
 
       autoTable(doc, {
         startY: currentY,
@@ -204,6 +193,14 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     doc.text(`For ${item.name}`, pageWidth / 2, currentY, { align: "center" })
     currentY += 12
 
+    // Description section with normalized text flow
+    const rawDesc = item.description || ""
+    const paragraphs = rawDesc.split(/\n\s*\n/)
+    const normalizedDesc = paragraphs
+      .map((p: string) => p.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n\n')
+
     checkAddPage(20)
     doc.setFont("helvetica", "bold")
     doc.setFontSize(10)
@@ -211,20 +208,28 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     currentY += 6
     doc.setFont("helvetica", "normal")
     doc.setFontSize(9)
-    const splitDesc = doc.splitTextToSize(item.description || "", pageWidth - (margin * 2))
+    const splitDesc = doc.splitTextToSize(normalizedDesc, pageWidth - (margin * 2))
 
     if (currentY + (splitDesc.length * 5) > contentBottomLimit - 10 && currentY > 70) {
-      doc.addPage();
-      drawPageBorder();
-      drawHeader(logoBase64);
-      currentY = 50;
+      doc.addPage()
+      drawPageBorder()
+      drawHeader(logoBase64)
+      currentY = 50
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(10)
+      doc.text("Description (Contd.):", margin, currentY)
+      currentY += 6
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(9)
     }
-    doc.text(splitDesc, margin, currentY)
-    currentY += (splitDesc.length * 4.5) + 5
 
+    doc.text(splitDesc, margin, currentY)
+    currentY += (splitDesc.length * 4.5) + 6
+
+    // Image & Features rendering
     const imageData = itemImages[item.id]
-    const imageFormat = item.image_format || 'wide'
-    const features = item.features && item.features.length > 0 ? item.features : [
+    const imageFormat = item.image_format || 'tall'
+    const features: string[] = item.features && item.features.length > 0 ? item.features : [
       "Accurate method for determining the strength of antibiotic material",
       "Microprocessor based design",
       "Average of Vertical diameter & Horizontal diameter of inhibited zone",
@@ -240,9 +245,10 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
     if (imageFormat === 'wide') {
       if (imageData?.base64) {
-        const maxWidth = pageWidth - (margin * 2) - 10
-        const maxHeight = 70
+        const maxWidth = pageWidth - (margin * 2) - 20
+        const maxHeight = 50
         const ratio = Math.min(maxWidth / imageData.width, maxHeight / imageData.height)
+        const imgWidth = imageData.width * ratio
         const imgHeight = imageData.height * ratio
 
         if (currentY + imgHeight > contentBottomLimit - 10 && currentY > 70) {
@@ -252,9 +258,8 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
           currentY = 50
         }
 
-        const newWidth = imageData.width * ratio
-        const x = (pageWidth - newWidth) / 2
-        doc.addImage(imageData.base64, "PNG", x, currentY, newWidth, imgHeight)
+        const x = (pageWidth - imgWidth) / 2
+        doc.addImage(imageData.base64, "JPEG", x, currentY, imgWidth, imgHeight)
         currentY += imgHeight + 8
       }
 
@@ -266,7 +271,8 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       doc.setFont("helvetica", "normal")
       doc.setFontSize(9)
       features.forEach((f: string) => {
-        const splitFeature = doc.splitTextToSize(f, pageWidth - (margin * 2) - 10)
+        const cleanFeature = f.replace(/^[•\-\*]\s*/, '').trim()
+        const splitFeature = doc.splitTextToSize(cleanFeature, pageWidth - (margin * 2) - 10)
         const featureHeight = splitFeature.length * 4.5
         checkAddPage(featureHeight + 2)
         doc.text("•", margin + 3, currentY)
@@ -282,7 +288,6 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       doc.text("FEATURES:", margin, currentY)
       currentY += 6
 
-      const featureStartY = currentY
       const contentWidth = pageWidth - (margin * 2)
       const featureWidth = contentWidth * 0.55
 
@@ -291,7 +296,8 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
       let featuresBlockHeight = 0
       features.forEach((f: string) => {
-        const split = doc.splitTextToSize(f, featureWidth - 5)
+        const cleanFeature = f.replace(/^[•\-\*]\s*/, '').trim()
+        const split = doc.splitTextToSize(cleanFeature, featureWidth - 5)
         featuresBlockHeight += split.length * 4.5
       })
 
@@ -311,15 +317,16 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       const currentFeatureStartY = currentY
 
       features.forEach((f: string) => {
+        const cleanFeature = f.replace(/^[•\-\*]\s*/, '').trim()
         doc.text("•", margin + 3, currentY)
-        const splitFeature = doc.splitTextToSize(f, featureWidth - 5)
+        const splitFeature = doc.splitTextToSize(cleanFeature, featureWidth - 5)
         doc.text(splitFeature, margin + 8, currentY)
         currentY += splitFeature.length * 4.5
       })
 
-      const featuresEndY = currentY;
+      const featuresEndY = currentY
 
-      let imageEndY = currentFeatureStartY;
+      let imageEndY = currentFeatureStartY
       if (imageData?.base64) {
         const maxImgWidth = contentWidth * 0.40
         const maxHeightConstraint = 80
@@ -334,7 +341,22 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       currentY = Math.max(featuresEndY, imageEndY) + 8
     }
 
-    if (item.specs && item.specs.length > 0) {
+    // Specifications Section with Dynamic Colon Alignment and Margin Overflow Prevention
+    const rawSpecs = item.specs
+    let specList: { key: string; value: string }[] = []
+    if (Array.isArray(rawSpecs)) {
+      specList = rawSpecs.map((s: any) => {
+        if (typeof s === 'string') {
+          const parts = s.split(':')
+          return { key: parts[0]?.trim() || '', value: parts.slice(1).join(':')?.trim() || '' }
+        }
+        return { key: s.key || s.name || '', value: s.value || '' }
+      }).filter(s => s.key || s.value)
+    } else if (rawSpecs && typeof rawSpecs === 'object') {
+      specList = Object.entries(rawSpecs).map(([k, v]) => ({ key: k, value: String(v) })).filter(s => s.key || s.value)
+    }
+
+    if (specList.length > 0) {
       checkAddPage(20)
       doc.setFont("helvetica", "bold")
       doc.setFontSize(10)
@@ -346,7 +368,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       // Calculate colon position dynamically based on longest spec key
       let colonX = margin + 55
       doc.setFont("helvetica", "bold")
-      item.specs.forEach((s: { key: string; value: string }) => {
+      specList.forEach((s) => {
         const cleanK = (s.key || '').replace(/:\s*$/, '').trim()
         const kWidth = doc.getTextWidth(cleanK)
         if (margin + 8 + kWidth + 4 > colonX) {
@@ -358,7 +380,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       const valueStartX = colonX + 3.5
       const maxValueWidth = (pageWidth - margin) - valueStartX
 
-      item.specs.forEach((s: { key: string; value: string }) => {
+      specList.forEach((s) => {
         const cleanKey = (s.key || '').replace(/:\s*$/, '').trim()
         const cleanValue = (s.value || '').replace(/^:\s*/, '').trim()
 
@@ -389,11 +411,12 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
         doc.text(":", colonX, currentY)
         doc.text(splitValue, valueStartX, currentY)
 
-        currentY += itemHeight + 1
+        currentY += itemHeight + 1.5
       })
       currentY += 6
     }
 
+    // Commercial Offer Table
     const unitPrice = item.price + (item.selectedAddons?.reduce((s: number, a: any) => s + a.price, 0) || 0)
 
     let descContent = item.name
@@ -420,9 +443,6 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
 
     const tableBody: any[] = []
 
-    const locale = currency === 'USD' ? 'en-US' : 'en-IN'
-    const fractionDigits = currency === 'USD' ? 2 : 0
-
     // Primary item row
     tableBody.push([
       { content: "01", styles: { halign: "center", valign: "middle", fontSize: 10 } },
@@ -431,10 +451,10 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       { content: `${currencySymbol} ${unitPrice.toLocaleString(locale, { minimumFractionDigits: fractionDigits, maximumFractionDigits: 2 })}/-`, styles: { halign: "right", fontStyle: "bold", valign: "middle", fontSize: 11, cellPadding: 4 } }
     ])
 
-    // ✅ FIX: Extra line items with serial numbers and bold styling
+    // Extra line items with serial numbers and bold styling
     if (item.selectedLineItems && item.selectedLineItems.length > 0) {
       item.selectedLineItems.forEach((li: any, liIndex: number) => {
-        const serialNo = String(liIndex + 2).padStart(2, '0') // 02, 03, 04...
+        const serialNo = String(liIndex + 2).padStart(2, '0')
         tableBody.push([
           { content: serialNo, styles: { halign: "center", valign: "middle", fontSize: 10, fontStyle: "bold" } },
           { content: li.description, styles: { halign: "left", valign: "middle", fontSize: 10, fontStyle: "bold", cellPadding: 4 } },
@@ -497,7 +517,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
       doc.addPage()
       drawPageBorder()
       drawHeader(logoBase64)
-      currentY = 55
+      currentY = 50
     }
 
     doc.text(splitNote, margin, currentY)
@@ -520,7 +540,7 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     { title: "MODIFICATION", text: "Any modification of these Terms and Conditions shall be valid only if it is in writing and signed by the authorized representatives of both Supplier and Customer." }
   ]
 
-  const termsToDisplay = selectedTerms && selectedTerms.length > 0 ? selectedTerms : defaultTerms;
+  const termsToDisplay = selectedTerms && selectedTerms.length > 0 ? selectedTerms : defaultTerms
 
   termsToDisplay.forEach((t) => {
     const cleanTitle = t.title.replace(/^\d+\.\s*/, '')
@@ -566,13 +586,32 @@ export const generateQuotationPDF = async ({ quotation, items, settings, user, s
     doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 8, { align: "right" })
   }
 
+  const rawNumber = (quotation.quotation_number || 'RLE-101').replace(/\(\d+\)$/, '').trim()
   const revisionNum = quotation.revision_number ? Number(quotation.revision_number) : 0
   const pdfName = revisionNum > 0
-    ? `${quotation.quotation_number}_Quotation(${revisionNum}).pdf`
-    : `${quotation.quotation_number}_Quotation.pdf`
-  doc.save(pdfName)
+    ? `${rawNumber}_Quotation(${revisionNum}).pdf`
+    : `${rawNumber}_Quotation.pdf`
 
-  return doc.output("blob")
+  // Direct programmatic anchor download ensuring 100% reliable .pdf extension across all browsers
+  const pdfBlob = doc.output("blob")
+  const blobWithMime = new Blob([pdfBlob], { type: "application/pdf" })
+  
+  if (typeof window !== 'undefined') {
+    const blobUrl = window.URL.createObjectURL(blobWithMime)
+    const downloadLink = document.createElement("a")
+    downloadLink.href = blobUrl
+    downloadLink.download = pdfName
+    document.body.appendChild(downloadLink)
+    downloadLink.click()
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl)
+      if (downloadLink.parentNode) {
+        document.body.removeChild(downloadLink)
+      }
+    }, 1500)
+  }
+
+  return blobWithMime
 }
 
 const getBase64ImageFromURL = (url: string): Promise<string> => {

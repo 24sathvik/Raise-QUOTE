@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { loginAction } from './actions'
 import { toast } from 'sonner'
 import { ArrowRight, Loader2, Lock, Mail } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -16,25 +15,37 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (loading) return
     setLoading(true)
 
     try {
-      const formData = new FormData()
-      formData.append('email', email)
-      formData.append('password', password)
-      const result = await loginAction(formData)
+      const cleanEmail = email.trim()
+      const cleanPassword = password.trim()
 
-      if (result?.error) {
-        toast.error(result.error)
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: cleanPassword,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok || data.error) {
+        toast.error(data.error || 'Invalid login credentials')
+        setLoading(false)
         return
       }
 
-      toast.success('Signed in successfully')
-      router.push('/')
-      router.refresh()
-    } catch (err) {
-      toast.error('Something went wrong')
-    } finally {
+      toast.success('Signed in successfully!')
+      window.location.href = '/'
+    } catch (err: any) {
+      console.error('Login exception:', err)
+      toast.error(err.message || 'Something went wrong during sign in')
       setLoading(false)
     }
   }
@@ -43,8 +54,15 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-[#F9FAFB] p-6">
       <div className="w-full max-w-[440px] space-y-8 rounded-3xl bg-white p-10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
         <div className="space-y-3 text-center">
-          <div className="mx-auto flex h-16 w-auto items-center justify-center">
-            <img src="/Zyxen-logo.jpeg" alt="Zyxen Logo" className="h-16 w-auto object-contain" />
+          <div className="mx-auto flex h-16 w-auto items-center justify-center overflow-hidden">
+            <img 
+              src="/Zyxen-logo.jpeg" 
+              alt="Zyxen Logo" 
+              width={160}
+              height={64}
+              style={{ maxHeight: '64px', maxWidth: '160px', objectFit: 'contain' }}
+              className="h-16 w-auto object-contain" 
+            />
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-black">Welcome Back</h1>
           <p className="text-muted-foreground">Sign in to your Raise Labs account</p>
@@ -86,7 +104,7 @@ export default function LoginPage() {
             suppressHydrationWarning
             disabled={loading}
             type="submit"
-            className="group relative flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-black font-semibold text-white transition-all hover:bg-black/90 disabled:opacity-50"
+            className="group relative flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-black font-semibold text-white transition-all hover:bg-black/90 disabled:opacity-50 cursor-pointer shadow-sm"
           >
             {loading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
